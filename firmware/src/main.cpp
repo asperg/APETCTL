@@ -188,13 +188,13 @@ void loop() {
   long newTargetTemp = targetTemp;
   long newSpeedX10 = targetSpeedX10;
   static bool EndPetTapeFlag = false;
-  const char spinner[] = {'-', '/', '|', '\\'};
+  const char spinner[] = {'-', '\\', '|', '/'};
   static uint8_t spinnerIdx = 0;
   static uint32_t spinnerTimer = 0;
     
   if (millis() - spinnerTimer >= 100) {
     spinnerTimer = millis();
-    oled.setCursorXY(105, 47);
+    oled.setCursorXY(106, 47);
     oled.setScale(2);
     oled.print(spinner[spinnerIdx]);
     if (++spinnerIdx >= 4) spinnerIdx = 0;
@@ -241,7 +241,7 @@ void loop() {
     oled.setCursorXY(12, 47);
     oled.print(FilamentLength, 3);  
     // вывести реальную (не расчетную скорость)
-    oled.setCursorXY(12, 26);
+    oled.setCursorXY(12, 23);
     oled.print(CurrentFilamentSpeed, 1);
     //oled.print("   ");
   }
@@ -498,7 +498,7 @@ void printSpeed(long s){
       // s -speed in mm/s * 10
       // // pint in mm/s
       oled.setScale(2);      
-      oled.setCursorXY(84, 23);
+      oled.setCursorXY(88, 23);
       if(whatToChange == CHANGE_SPEED)  oled.invertText(true);
       oled.print((float)s/10, 1);
 //      if (s<100) oled.print(" "); //fix display garbage 

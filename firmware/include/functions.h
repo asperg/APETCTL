@@ -6,7 +6,7 @@ extern int whatToChange;
 
 void printTargetTemp(long t);
 void printCurrentTemp(long t);
-void printSpeed(long s);
+void printTargetSpeed(long s);
 void printHeaterStatus(boolean status);
 void printMotorStatus(boolean status);
 void printTapeStatus(boolean status);

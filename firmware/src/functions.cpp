@@ -54,7 +54,7 @@ void printCurrentTemp(long t) {
       oled.print( t % 10 );
 }
 
-void printSpeed(long s){
+void printTargetSpeed(long s){
       // s -speed in mm/s * 10
       // // pint in mm/s
       oled.setScale(2);      

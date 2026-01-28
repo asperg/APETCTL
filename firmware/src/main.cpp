@@ -133,7 +133,7 @@ void setup() {
 
   SplashScreen();  
   regulator.setpoint = targetTemp;
-  printSpeed(targetSpeedX10);
+  printTargetSpeed(targetSpeedX10);
   printTargetTemp(targetTemp);
   heater_pwm = 0;
 }
@@ -246,17 +246,17 @@ void loop() {
     whatToChange = CHANGE_SPEED;
     interactiveSet();
     printTargetTemp(targetTemp); // to clear selection
-    printSpeed(targetSpeedX10);
+    printTargetSpeed(targetSpeedX10);
   }
   if (enc1.isSingle()) {
     whatToChange = CHANGE_TEMPERATURE;
     interactiveSet();
-    printSpeed(targetSpeedX10); // to clear selection
+    printTargetSpeed(targetSpeedX10); // to clear selection
     printTargetTemp(targetTemp);
   }
   if (!isInteractive()) {
     whatToChange = CHANGE_NO;
-    printSpeed(targetSpeedX10); // to clear selection
+    printTargetSpeed(targetSpeedX10); // to clear selection
     printTargetTemp(targetTemp);
   }
 
@@ -285,7 +285,7 @@ void loop() {
     }
     if (newSpeedX10 != targetSpeedX10) {
       targetSpeedX10 = newSpeedX10;
-      printSpeed(targetSpeedX10);
+      printTargetSpeed(targetSpeedX10);
     }
   }
 

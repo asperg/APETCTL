@@ -3,26 +3,19 @@
 #include "PinChangeInterrupt.h"
 #include "PETCTL_cfg.h"
 #include "temp_table.h"
-#define SPEED_MAX 9.9
-#define SPEED_MIN 1.1
+#include "functions.h"
 // Functions prototype
 
 void debugTemp(long temp, int out);
 long mmStoDeg(float mmS);
 void emStop(int reason);
 void motorCTL(long setSpeedX10);
-void printHeaterStatus(boolean status);
-void printMotorStatus(boolean status);
-void printTapeStatus(boolean status);
 void encRotationToValue (long* value, int inc, long minValue, long maxValue);
-void printTargetTemp(long t);
-void printCurrentTemp(long t);
-void printSpeed(long s);
 void interactiveSet();
 boolean isInteractive();
 long getTemp();
 void LengthEvent(void);
-void SplashScreen(void);
+
 
 #define DRIVER_STEP_TIME 10  // меняем задержку на 10 мкс
 
@@ -73,10 +66,6 @@ GyverPID regulator(CFG_PID_P, CFG_PID_I, CFG_PID_D, 200);
 bool Heat = false;
 bool runMotor=false;
 
-/* Interactive statuses */
-#define CHANGE_NO 0
-#define CHANGE_TEMPERATURE 1
-#define CHANGE_SPEED 2
 int whatToChange = CHANGE_NO;
 unsigned long interactive = millis();
 
@@ -236,14 +225,7 @@ void loop() {
       CurrentFilamentSpeed = 0.0;
     }
     float FilamentLength = (float)copyFilamentTiks*STEP_METERS;
-    // Вывести Метраж, мусора не будет т.к. только нарастает :)
-    oled.setScale(2);
-    oled.setCursorXY(12, 47);
-    oled.print(FilamentLength, 3);  
-    // вывести реальную (не расчетную скорость)
-    oled.setCursorXY(12, 23);
-    oled.print(CurrentFilamentSpeed, 1);
-    //oled.print("   ");
+    printMillageAndSpeed(FilamentLength, CurrentFilamentSpeed);
   }
 
   if (runMotor) {
@@ -294,6 +276,10 @@ void loop() {
     encRotationToValue(&newSpeedX10, 1, SPEED_MIN * 10, SPEED_MAX * 10);
     if (enc1.isHolded()) {
       runMotor = ! runMotor;
+      //Если мотор выключили, установить минимальную скорость
+      if(!runMotor) {
+        currentSpeedX10 = (float)SPEED_MIN * 10;
+      }
       interactiveSet();
       printMotorStatus(runMotor);
     }
@@ -436,34 +422,6 @@ void motorCTL(long setSpeedX10) {
   }
 }
 
-void printHeaterStatus(boolean status) {
-  oled.setCursorXY(0, 0);
-  oled.setScale(2);
-  if(status) 
-    oled.print("*");
-  else
-    oled.print(".");
-}
-
-void printMotorStatus(bool status) {
-  oled.setCursorXY(0, 23);
-  oled.setScale(2);
-  if(status) 
-    oled.print("*");
-  else
-    oled.print(".");
-}
-
-void printTapeStatus(bool status) {
-  oled.setCursorXY(0, 47);
-  oled.setScale(2);
-  if(status) 
-    oled.print("X");
-  else
-    oled.print(" ");
-}
-
-
 void encRotationToValue (long* value, int inc = 1, long minValue = 0, long maxValue = 0) {
       if (enc1.isRight()) { *value += inc; interactiveSet(); }     // если был поворот направо, увеличиваем на 1
       if (enc1.isFastR()) { *value += inc * 5; interactiveSet(); }    // если был быстрый поворот направо, увеличиваем на 10
@@ -473,36 +431,6 @@ void encRotationToValue (long* value, int inc = 1, long minValue = 0, long maxVa
       if (*value < minValue) *value = minValue;
       //if (maxValue > 0 && *value > maxValue) *value = maxValue;
       if (*value > maxValue) *value = maxValue;
-}
-
-void printTargetTemp(long t){
-      oled.setScale(2);      
-      if(whatToChange == CHANGE_TEMPERATURE)  oled.invertText(true);
-      oled.setCursorXY(88, 0);
-      oled.println(t, 1);  
-      oled.invertText(false);
-}
-
-//Входной параметр температура X10
-void printCurrentTemp(long t) {
-      oled.setScale(2);      
-      oled.setCursorXY(12, 0);
-      if (t < 1000) oled.print(" ");
-      if (t < 100) oled.print(" ");
-      oled.print( t / 10 );
-      oled.print( ".");
-      oled.print( t % 10 );
-}
-
-void printSpeed(long s){
-      // s -speed in mm/s * 10
-      // // pint in mm/s
-      oled.setScale(2);      
-      oled.setCursorXY(88, 23);
-      if(whatToChange == CHANGE_SPEED)  oled.invertText(true);
-      oled.print((float)s/10, 1);
-//      if (s<100) oled.print(" "); //fix display garbage 
-      oled.invertText(false);
 }
 
 void interactiveSet() {
@@ -543,21 +471,3 @@ long getTemp() {
   return (long)t;
 }
 
-void SplashScreen(void) {
-  oled.setScale(3);
-  oled.setCursor(5, 2);
-  oled.println("APETctl");
-  oled.setScale(1);
-  oled.setCursor(20, 7);
-  oled.print("asper V 0.4");
-  delay(2500);
- 
-  oled.clear();
-  oled.setScale(1);
-  oled.setCursorXY(74,5);
-  oled.print("*C");
-  oled.setCursorXY(55,5+5+16);
-  oled.print("mm/s");
-  oled.setCursorXY(98,5+5+5+5+32);
-  oled.print("m");
-}

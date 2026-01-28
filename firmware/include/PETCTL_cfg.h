@@ -46,6 +46,14 @@
 /* Initial pull speed [mm/s] */
 #define CFG_SPEED_INIT 5
 
+#define SPEED_MAX 9.9
+#define SPEED_MIN 1.1
+/* Interactive statuses */
+#define CHANGE_NO 0
+#define CHANGE_TEMPERATURE 1
+#define CHANGE_SPEED 2
+
+
 // Таблица расчета длительности таймера 1, индекс таблицы
 // скорость в мм в сек умноженнгая на 10
 // значение: задержка между шагами двигателя в тиках таймера

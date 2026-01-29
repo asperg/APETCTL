@@ -61,8 +61,9 @@ int targetTemp = CFG_TEMP_INIT;
 #include "GyverPID.h"
 GyverPID regulator(CFG_PID_P, CFG_PID_I, CFG_PID_D, 200);
 
+bool EndPetTapeFlag = false;
 bool Heat = false;
-bool runMotor=false;
+bool runMotor = false;
 
 int whatToChange = CHANGE_NO;
 unsigned long interactive = millis();
@@ -111,6 +112,7 @@ void setup() {
 
   oled_init();
   oled_clear();
+  SplashScreen();
 
   enc1.setType(CFG_ENC_TYPE);
   enc1.setPinMode(LOW_PULL);
@@ -126,10 +128,12 @@ void setup() {
   adc_sum = (uint32_t)startAdc * RING_BUFFER_SIZE;
   eed_sum = ((~0UL) >> 5) * RING_BUFFER_SIZE;
 
-  SplashScreen();  
   regulator.setpoint = targetTemp;
   printTargetSpeed(targetSpeedX10);
   printTargetTemp(targetTemp);
+  printHeaterStatus(Heat);
+  printMotorStatus(runMotor);
+  printTapeStatus(EndPetTapeFlag);
   heater_pwm = 0;
 }
 
@@ -171,7 +175,6 @@ void loop() {
 
   long newTargetTemp = targetTemp;
   long newSpeedX10 = targetSpeedX10;
-  static bool EndPetTapeFlag = false;
   const char spinner[] = {'-', '\\', '|', '/'};
   static uint8_t spinnerIdx = 0;
   static uint32_t spinnerTimer = 0;
@@ -179,6 +182,7 @@ void loop() {
   if (millis() - spinnerTimer >= 100) {
     spinnerTimer = millis();
     oled_printCharBig(108, 6, spinner[spinnerIdx], false);
+    if ( spinnerIdx % 2 ) printCurrentTemp(curTempX10);
     if (++spinnerIdx >= 4) spinnerIdx = 0;
   }
 
@@ -287,7 +291,7 @@ void loop() {
   regulator.input = (float)curTempX10/10.0;
   if (curTempX10 != prevTempX10) {
     prevTempX10 = curTempX10;
-    printCurrentTemp(curTempX10);
+    //printCurrentTemp(curTempX10);
   }
   int pidOut = regulator.getResultTimer();
   if (Heat) {

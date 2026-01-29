@@ -31,11 +31,13 @@
 
 /* PID regulator coefficients */
 //PID p: 12.69  PID i: 0.71 PID d: 57.11
-#define CFG_PID_P 12.69
-#define CFG_PID_I 0.71
-#define CFG_PID_D 57.11
+#define CFG_PID_P 12.7
+#define CFG_PID_I 0.7
+#define CFG_PID_D 57.1
 
-/* Which pin heater MOSFET connected to */
+/* Which pin heater MOSFET connected to 
+Из за особенностей кода может быть от 8 до 13 пина.
+*/
 #define CFG_HEATER_PIN 9
 
 /* Энкодер длины протянутого прутка */
@@ -44,7 +46,7 @@
 #define CFG_ENC_IMP 12   // импульсов на один оборот энкодера
 
 /* Initial pull speed [mm/s] */
-#define CFG_SPEED_INIT 5
+#define CFG_SPEED_INIT 2
 
 #define SPEED_MAX 9.9
 #define SPEED_MIN 1.1

@@ -16,7 +16,7 @@ void interactiveSet();
 boolean isInteractive();
 long getTemp();
 void LengthEvent(void);
-
+int computePID(void);
 
 #define DRIVER_STEP_TIME 10  // меняем задержку на 10 мкс
 
@@ -27,7 +27,7 @@ void LengthEvent(void);
 Encoder enc1(CLK, DT, SW);
 //int value = 0;
 
-volatile uint8_t heater_pwm = 0;              // Значение 0-255 (как в analogWrite)
+volatile uint32_t heater_pwm_threshold = 0;   // Предел времени для ШИМ контроля
 uint32_t heater_timer_acc = 0;                // Аккумулятор микросекунд
 volatile unsigned long lastTimeInterrupt = 0; // Время предыдущего прерывания
 volatile unsigned long FilamentTiks = 0;      // Сколько всего натикал энкодер
@@ -55,18 +55,21 @@ const float STEP_METERS = (float)CFG_ENC_DIAM*(float)0.0031415926/(float)CFG_ENC
 const float SPEED_CONSTANT = STEP_METERS*(float)1000000000; 
 
 // Termistor definition
-int prevTempX10, curTempX10 = 0;
-int targetTemp = CFG_TEMP_INIT;
-
-#include "GyverPID.h"
-GyverPID regulator(CFG_PID_P, CFG_PID_I, CFG_PID_D, 200);
-
+long curTempX10 = 0;
+long targetTemp10 = (long)CFG_TEMP_INIT*10;
+// for pid regulator
+long pid_integral = 0;
+long pid_lastError = 0;
 bool EndPetTapeFlag = false;
 bool Heat = false;
 bool runMotor = false;
 
 int whatToChange = CHANGE_NO;
 unsigned long interactive = millis();
+
+// 
+uint8_t motor_bit;
+uint8_t heater_bit;
 
 /* Emergency stop reasons */
 #define OVERHEAT 1
@@ -91,8 +94,12 @@ void setup() {
   pinMode(CFG_STEP_EN_PIN, OUTPUT);   // Пин 7
   pinMode(CFG_HEATER_PIN, OUTPUT);    // Нагреватель
 
+  motor_bit = digitalPinToBitMask(CFG_STEP_STEP_PIN);
+  heater_bit = digitalPinToBitMask(CFG_HEATER_PIN);
+
   digitalWrite(CFG_STEP_EN_PIN, HIGH);  // Выключаем мотор (активный LOW)
   digitalWrite(CFG_STEP_DIR_PIN, LOW);  // Направление по умолчанию
+  PORTD &= ~motor_bit;                  // Перевести пин STEP в 0
 
   // Настройка Таймеров
   noInterrupts();
@@ -128,13 +135,11 @@ void setup() {
   adc_sum = (uint32_t)startAdc * RING_BUFFER_SIZE;
   eed_sum = ((~0UL) >> 5) * RING_BUFFER_SIZE;
 
-  regulator.setpoint = targetTemp;
   printTargetSpeed(targetSpeedX10);
-  printTargetTemp(targetTemp);
+  printTargetTemp(targetTemp10);
   printHeaterStatus(Heat);
   printMotorStatus(runMotor);
   printTapeStatus(EndPetTapeFlag);
-  heater_pwm = 0;
 }
 
 // обработчик
@@ -146,25 +151,26 @@ ISR(TIMER2_COMPA_vect) {
 ISR(TIMER1_COMPA_vect) {
   // 1. Мотор (максимальный приоритет по времени)
   if (runMotor) {
-    PIND |= digitalPinToBitMask(CFG_STEP_STEP_PIN);
-    delayMicroseconds(DRIVER_STEP_TIME);
-    PIND |= digitalPinToBitMask(CFG_STEP_STEP_PIN);
+    PORTD |= motor_bit;  // Гарантированный HIGH
+    // Вместо delayMicroseconds(1)
+    asm volatile("nop"); // Пауза в 1 такт (62.5 наносекунды)
+    asm volatile("nop"); 
+    PORTD &= ~motor_bit; // Гарантированный LOW
   }
   
   // При частоте 16 МГц и предделителе 8, таймер тикает с частотой 2 МГц
   // Это значит: 1 тик = 0.5 микросекунды.
   // Переводим тики в микросекунды
   heater_timer_acc += (OCR1A >> 1); 
-
   if (heater_timer_acc >= 33333) { 
     heater_timer_acc = 0;
     // Начало нового цикла 30 Гц
-    if (heater_pwm > 0 && Heat) digitalWrite(CFG_HEATER_PIN, HIGH);
+    if (heater_pwm_threshold > 0 && Heat) PORTB |= heater_bit;
   } else {
     // Конец импульса ШИМ (программная отсечка)
     // 33333 / 255 = ~130 мкс на одну единицу ШИМ
-    if (heater_timer_acc > (uint32_t)heater_pwm * 130) {
-      digitalWrite(CFG_HEATER_PIN, LOW);
+    if (heater_timer_acc > heater_pwm_threshold) {
+      PORTB &= ~heater_bit;
     }
   }
 }
@@ -173,16 +179,36 @@ void loop() {
   wdt_reset();
   enc1.tick();
 
-  long newTargetTemp = targetTemp;
+  long newTargetTemp = targetTemp10/10;
   long newSpeedX10 = targetSpeedX10;
   const char spinner[] = {'-', '\\', '|', '/'};
   static uint8_t spinnerIdx = 0;
   static uint32_t spinnerTimer = 0;
-    
+
+// SPINNER ----------------------------------------------------    
+// 10  раз в секунду
   if (millis() - spinnerTimer >= 100) {
     spinnerTimer = millis();
     oled_printCharBig(108, 6, spinner[spinnerIdx], false);
-    if ( spinnerIdx % 2 ) printCurrentTemp(curTempX10);
+    // В двое медленне, здесь опрос температуры !!! и расчет пида
+    if (spinnerIdx % 2) {
+      // TEMPERATURE ---------------------------
+      curTempX10 = getTemp();
+      if (curTempX10 > CFG_TEMP_MAX_X10 - 100) emStop(OVERHEAT);
+      if (Heat) {
+        uint32_t new_heater_pwm_thresold = 130 * (uint32_t)computePID();
+        // ШИМ 30 герц, таймер 2МГц итого 130 микросекунт на один уровень ШИМ
+        noInterrupts();
+        heater_pwm_threshold = new_heater_pwm_thresold;
+        interrupts();
+        }
+      else {
+        noInterrupts();
+        heater_pwm_threshold = 0;
+        interrupts();
+      }
+      printCurrentTemp(curTempX10);
+    }
     if (++spinnerIdx >= 4) spinnerIdx = 0;
   }
 
@@ -242,19 +268,19 @@ void loop() {
   if (enc1.isDouble()) {
     whatToChange = CHANGE_SPEED;
     interactiveSet();
-    printTargetTemp(targetTemp); // to clear selection
+    printTargetTemp(targetTemp10); // to clear selection
     printTargetSpeed(targetSpeedX10);
   }
   if (enc1.isSingle()) {
     whatToChange = CHANGE_TEMPERATURE;
     interactiveSet();
     printTargetSpeed(targetSpeedX10); // to clear selection
-    printTargetTemp(targetTemp);
+    printTargetTemp(targetTemp10);
   }
   if (!isInteractive()) {
     whatToChange = CHANGE_NO;
     printTargetSpeed(targetSpeedX10); // to clear selection
-    printTargetTemp(targetTemp);
+    printTargetTemp(targetTemp10);
   }
 
   if( whatToChange == CHANGE_TEMPERATURE) {
@@ -264,10 +290,9 @@ void loop() {
       printHeaterStatus(Heat);
     }
 
-    if (newTargetTemp != targetTemp) {
-      targetTemp = newTargetTemp;
-      regulator.setpoint = newTargetTemp;
-      printTargetTemp(newTargetTemp);
+    if (newTargetTemp*10 != targetTemp10) {
+      targetTemp10 = newTargetTemp*10;
+      printTargetTemp(targetTemp10);
     }
   } else if (whatToChange == CHANGE_SPEED) {
     encRotationToValue(&newSpeedX10, 1, SPEED_MIN * 10, SPEED_MAX * 10);
@@ -275,7 +300,7 @@ void loop() {
       runMotor = ! runMotor;
       //Если мотор выключили, установить минимальную скорость
       if(!runMotor) {
-        currentSpeedX10 = (float)SPEED_MIN * 10;
+        currentSpeedX10 = (long)((float)SPEED_MIN * 10.0);
       }
       interactiveSet();
       printMotorStatus(runMotor);
@@ -286,23 +311,6 @@ void loop() {
     }
   }
 
-  curTempX10 = getTemp();
-  if (curTempX10 > CFG_TEMP_MAX_X10 - 100) emStop(OVERHEAT);
-  regulator.input = (float)curTempX10/10.0;
-  if (curTempX10 != prevTempX10) {
-    prevTempX10 = curTempX10;
-    //printCurrentTemp(curTempX10);
-  }
-  int pidOut = regulator.getResultTimer();
-  if (Heat) {
-    heater_pwm = (uint8_t)constrain(pidOut, 0, 255);
-    debugTemp(curTempX10, pidOut);
-  } else {
-    heater_pwm = 0;
-    analogWrite(CFG_HEATER_PIN, 0);
-    debugTemp(curTempX10, 0);
-  }
-
   // Обработка датчика конца ПЭТ ленты
   // ререходим на машину состояний
   // Если произошло срабоатывание датчика
@@ -311,7 +319,9 @@ void loop() {
     if(runMotor || Heat) {
       runMotor = false;
       Heat = false;
-      heater_pwm = 0;
+      noInterrupts();
+      heater_pwm_threshold = 0;
+      interrupts();
       digitalWrite(CFG_HEATER_PIN, LOW);   // Гасим нагрев немедленно
       digitalWrite(CFG_STEP_EN_PIN, HIGH); // Снимаем ток с мотора (свободное вращение)
       printHeaterStatus(Heat);
@@ -349,26 +359,10 @@ void LengthEvent(void) {
   }
 }
 
-
-void debugTemp(long temp, int out) {
-#if defined(SERIAL_DEBUG_TEMP)
-    static long debug_time;
-    if (debug_time < millis() ) {
-      debug_time = millis() + 1000;
-      Serial.print(temp);
-#if defined(SERIAL_DEBUG_TEMP_PID)
-      Serial.print(' ');
-      Serial.print(out);
-#endif // end SERIAL_DEBUG_TEMP_PID
-      Serial.println(' ');
-    }
-#endif //end SERIAL_DEBUG_TEMP
-}
-
 void emStop(int reason) {
   runMotor = false;
   Heat = false;
-  heater_pwm = 0;
+  heater_pwm_threshold = 0;
   digitalWrite(CFG_STEP_EN_PIN, HIGH); // Снять ток с мотора
   analogWrite(CFG_HEATER_PIN, 0);
   oled_clear();
@@ -464,3 +458,41 @@ long getTemp() {
   return (long)t;
 }
 
+// и так все нужне переменные глобальные
+int computePID(void) {
+
+  if (!Heat) {
+    pid_integral = 0; // Обнуляем "память" регулятора
+    return 0;
+  } 
+   // Коэффициенты (подобраны с множителем 10)
+  long Kp = (long)CFG_PID_P*10;
+  long Ki = (long)CFG_PID_I*10;
+  long Kd = (long)CFG_PID_D*10;
+
+  // Лимиты для анти-виндапа (защита от разгона интеграла)
+  const long i_limit = 2550; 
+  long error = targetTemp10 - curTempX10;
+  // 1. Пропорциональная часть
+  long P = Kp * error;
+
+  // 2. Интегральная часть (с защитой i_limit)
+  pid_integral += error;
+  if (pid_integral > i_limit) pid_integral = i_limit;
+  else if (pid_integral < -i_limit) pid_integral = -i_limit;
+  long I = Ki * pid_integral;
+
+  // 3. Дифференциальная часть
+  long D = Kd * (error - pid_lastError);
+  pid_lastError = error;
+
+  // Итоговый результат с обратным масштабированием
+  // Делим на 100, так как K и Temp оба имеют множители
+  long output = (P + I + D) / 100;
+
+  // Ограничиваем под ШИМ 0-255
+  if (output > 255) output = 255;
+  if (output < 0) output = 0;
+
+  return (int)output;
+}

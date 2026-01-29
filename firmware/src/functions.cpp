@@ -32,10 +32,11 @@ void printMillageAndSpeed(float m, float s) {
 }
 
 void printTargetTemp(long t){
+      long TargetTemp = t/10;
       if(whatToChange == CHANGE_TEMPERATURE)  {
-        oled_printInt(88, 0, t, true, true);
+        oled_printInt(88, 0, TargetTemp, true, true);
       } else {
-        oled_printInt(88, 0, t, true, false);
+        oled_printInt(88, 0, TargetTemp, true, false);
       }
 }
 

@@ -1,23 +1,22 @@
 #include "functions.h"
 #include "PETCTL_cfg.h"
+#include "oled.h"
 
 void SplashScreen(void) {
-  oled.setScale(3);
-  oled.setCursor(5, 2);
-  oled.println("APETctl");
-  oled.setScale(1);
-  oled.setCursor(20, 7);
-  oled.print("asper V 0.4");
+  oled_printStrBig(22, 2, "APETctl", false);
+  oled_printStr(31, 5, "asper V 1.0", false);
+
+  uint8_t startX = 26;
+  for (uint8_t i = 0; i < 3; i++) {
+    oled_drawChinese(startX + (i * 26), 5, i); // 24 ширина + 2 интервал = 26
+  }
+
   delay(2500);
  
-  oled.clear();
-  oled.setScale(1);
-  oled.setCursorXY(74,5);
-  oled.print("*C");
-  oled.setCursorXY(55,5+5+16);
-  oled.print("mm/s");
-  oled.setCursorXY(98,5+5+5+5+32);
-  oled.print("m");
+  oled_clear();
+  oled_printStr(74, 1, "*C", false);
+  oled_printStr(62, 3, "mm/s", false);
+  oled_printChar(98, 7, 'm', false);
 }
 
 void printMillageAndSpeed(float m, float s) {
@@ -27,69 +26,67 @@ void printMillageAndSpeed(float m, float s) {
   }
  
   // Вывести Метраж, мусора не будет т.к. только нарастает :)
-  oled.setScale(2);
-  oled.setCursorXY(12, 47);
-  oled.print(m, 3);  
+  oled_printFloat(12, 6, m, 3, true, false);
   // вывести реальную (не расчетную скорость)
-  oled.setCursorXY(12, 23);
-  oled.print(s, 1);
+  oled_printFloat(12, 2, s, 1, true, false);
 }
 
 void printTargetTemp(long t){
-      oled.setScale(2);      
-      if(whatToChange == CHANGE_TEMPERATURE)  oled.invertText(true);
-      oled.setCursorXY(88, 0);
-      oled.println(t, 1);  
-      oled.invertText(false);
+      if(whatToChange == CHANGE_TEMPERATURE)  {
+        oled_printInt(88, 0, t, true, true);
+      } else {
+        oled_printInt(88, 0, t, true, false);
+      }
 }
 
 //Входной параметр температура X10
 void printCurrentTemp(long t) {
-      oled.setScale(2);      
-      oled.setCursorXY(12, 0);
-      if (t < 1000) oled.print(" ");
-      if (t < 100) oled.print(" ");
-      oled.print( t / 10 );
-      oled.print( ".");
-      oled.print( t % 10 );
+  char buf[6]; // "123.5" + \0
+  buf[5] = '\0'; // Завершаем строку
+  buf[3] = '.';  // Точка всегда на этом месте
+  
+  // Дробная часть (последняя цифра)
+  buf[4] = (t % 10) + '0';
+  int val = t / 10; // Целая часть
+  // Единицы
+  buf[2] = (val % 10) + '0';
+  val /= 10;
+  // Десятки
+  if (val > 0) buf[1] = (val % 10) + '0';
+  else buf[1] = ' '; // Вместо нуля — пробел
+  val /= 10;
+  // Сотни
+  if (val > 0) buf[0] = (val % 10) + '0';
+  else buf[0] = ' '; // Вместо нуля — пробел
+  oled_printStrBig(12, 0, buf, false);
 }
 
 void printTargetSpeed(long s){
-      // s -speed in mm/s * 10
-      // // pint in mm/s
-      oled.setScale(2);      
-      oled.setCursorXY(88, 23);
-      if(whatToChange == CHANGE_SPEED)  oled.invertText(true);
-      oled.print((float)s/10, 1);
-//      if (s<100) oled.print(" "); //fix display garbage 
-      oled.invertText(false);
+  if(whatToChange == CHANGE_SPEED)  {
+    oled_printFloat(88, 2, (float)s/10.0, 1, true, true);
+  } else {
+    oled_printFloat(88, 2, (float)s/10.0, 1, true, false);
+  }
 }
 
-
-void printHeaterStatus(boolean status) {
-  oled.setCursorXY(0, 0);
-  oled.setScale(2);
+void printHeaterStatus(bool status) {
   if(status) 
-    oled.print("*");
+    oled_printCharBig(0, 0, '*', false);
   else
-    oled.print(".");
+    oled_printCharBig(0, 0, '.', false);
 }
 
 void printMotorStatus(bool status) {
-  oled.setCursorXY(0, 23);
-  oled.setScale(2);
   if(status) 
-    oled.print("*");
+    oled_printCharBig(0, 2, '*', false);
   else
-    oled.print(".");
+    oled_printCharBig(0, 2, '.', false);
 }
+
 
 void printTapeStatus(bool status) {
-  oled.setCursorXY(0, 47);
-  oled.setScale(2);
   if(status) 
-    oled.print("X");
+    oled_printCharBig(0, 6, 'X', false);
   else
-    oled.print(" ");
+    oled_printCharBig(0, 6, ' ', false);
 }
-

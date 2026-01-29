@@ -1,7 +1,6 @@
 #ifndef FUNCTIONS_H
 #define FUNCTIONS_H
-#include <GyverOLED.h> 
-extern GyverOLED<SSD1306_128x64, OLED_NO_BUFFER> oled;
+#include <Arduino.h>
 extern int whatToChange;
 
 void printTargetTemp(long t);
@@ -12,6 +11,5 @@ void printMotorStatus(boolean status);
 void printTapeStatus(boolean status);
 void SplashScreen(void);
 void printMillageAndSpeed(float m, float s);
-
 
 #endif

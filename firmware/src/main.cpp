@@ -4,6 +4,7 @@
 #include "PETCTL_cfg.h"
 #include "temp_table.h"
 #include "functions.h"
+#include "oled.h"
 // Functions prototype
 
 void debugTemp(long temp, int out);
@@ -18,9 +19,6 @@ void LengthEvent(void);
 
 
 #define DRIVER_STEP_TIME 10  // меняем задержку на 10 мкс
-
-#include "GyverOLED.h"
-GyverOLED<SSD1306_128x64, OLED_NO_BUFFER> oled;
 
 #define CLK CFG_ENC_CLK
 #define DT CFG_ENC_DT
@@ -111,11 +109,8 @@ void setup() {
   // подключение обработки прерывания по сигналу от датчика
   attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(CFG_LENGHT_PIN), LengthEvent, RISING);
 
-  oled.init();              // инициализация
-  // ускорим вывод, ВЫЗЫВАТЬ ПОСЛЕ oled.init()!!!
-  //Wire.setClock(400000L);   // макс. 800'000
-  Wire.setClock(800000L);   // макс. 800'000
-  oled.clear();
+  oled_init();
+  oled_clear();
 
   enc1.setType(CFG_ENC_TYPE);
   enc1.setPinMode(LOW_PULL);
@@ -183,9 +178,7 @@ void loop() {
     
   if (millis() - spinnerTimer >= 100) {
     spinnerTimer = millis();
-    oled.setCursorXY(106, 47);
-    oled.setScale(2);
-    oled.print(spinner[spinnerIdx]);
+    oled_printCharBig(108, 6, spinner[spinnerIdx], false);
     if (++spinnerIdx >= 4) spinnerIdx = 0;
   }
 
@@ -374,18 +367,14 @@ void emStop(int reason) {
   heater_pwm = 0;
   digitalWrite(CFG_STEP_EN_PIN, HIGH); // Снять ток с мотора
   analogWrite(CFG_HEATER_PIN, 0);
-  oled.clear();
-  oled.setScale(3);
-  oled.setCursorXY(0,2);
-  oled.println("*HALT!*");
-  oled.setScale(2);
-  oled.setCursorXY(3,40);
+  oled_clear();
+  oled_printStrBig(0, 2, "*HALT!*", false);
   switch (reason) {
     case OVERHEAT:
-      oled.println("Overheat");
+      oled_printStrBig(0, 5, "Overheat", false);
       break;
     case THERMISTOR_ERROR:
-      oled.println("Thermistor");
+      oled_printStrBig(0, 5, "Thermistor", false);
       break;
   }
   noInterrupts();

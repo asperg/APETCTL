@@ -5,10 +5,8 @@
 #include "temp_table.h"
 #include "functions.h"
 #include "oled.h"
-// Functions prototype
 
-void debugTemp(long temp, int out);
-long mmStoDeg(float mmS);
+// Functions prototype
 void emStop(int reason);
 void motorCTL(long setSpeedX10);
 void encRotationToValue (long* value, int inc, long minValue, long maxValue);
@@ -18,29 +16,27 @@ long getTemp();
 void LengthEvent(void);
 int computePID(void);
 
-#define DRIVER_STEP_TIME 10  // меняем задержку на 10 мкс
-
+#define TOGGLE_LED (PINB = (1 << 5)) //　Переключить встроенный светодиод
+#define SET_LED_OUTPUT (DDRB |= (1 << 5)) // Перевести PIN 13 в режим OUTPUT получится яркий светодиод
 #define CLK CFG_ENC_CLK
 #define DT CFG_ENC_DT
 #define SW CFG_ENC_SW
 #include "GyverEncoder.h"
 Encoder enc1(CLK, DT, SW);
-//int value = 0;
 
-volatile uint32_t heater_pwm_threshold = 0;   // Предел времени для ШИМ контроля
-uint32_t heater_timer_acc = 0;                // Аккумулятор микросекунд
-volatile unsigned long lastTimeInterrupt = 0; // Время предыдущего прерывания
-volatile unsigned long FilamentTiks = 0;      // Сколько всего натикал энкодер
-volatile bool newDataFlag = false;            // Флаг, что данные обновились
+volatile uint32_t heater_pwm_threshold = 0;       // Предел времени для ШИМ нагревателя
+uint32_t heater_timer_acc = 0;                    // Аккумулятор микросекунд для ШИМ нагревателя
+volatile unsigned long lastTimeInterrupt = 0;     // Время предыдущего прерывания от энкодера длинны
+volatile unsigned long FilamentTiks = 0;          // Сколько всего натикал энкодер
+volatile bool newDataFlag = false;                // Флаг, что данные обновились
 
 long targetSpeedX10 = (float)CFG_SPEED_INIT * 10; // То, что мы выставили энкодером
-long currentSpeedX10 = (float)SPEED_MIN * 10;    // Реальная скорость в данный момент
-uint32_t accelTimer = 0;                         // Таймер для шага разгона
-#define ACCEL_STEP_MS 50                         // Интервал изменения скорости (мс)
-
+long currentSpeedX10 = (float)SPEED_MIN * 10;     // Реальная скорость в данный момент
+uint32_t accelTimer = 0;                          // Таймер для шага разгона
+#define ACCEL_STEP_MS 50                          // Интервал изменения скорости (мс)
 
 #define RING_BUFFER_SIZE 16
-uint16_t adc_buffer[RING_BUFFER_SIZE]; // массив для хранения последних 16 значений
+uint16_t adc_buffer[RING_BUFFER_SIZE]; // массив для хранения последних 16 значений АЦП
 uint8_t adc_idx = 0;                   // текущий индекс в массиве
 uint32_t adc_sum = 0;                  // текущая сумма всех значений в буфере
 
@@ -51,7 +47,7 @@ volatile unsigned long eed_sum = 0;
 
 // Метров за один импульс
 const float STEP_METERS = (float)CFG_ENC_DIAM*(float)0.0031415926/(float)CFG_ENC_IMP;
-// Коэффициент для расчета скорости через micros()
+// Коэффициент для расчета текущей скорости ленты 
 const float SPEED_CONSTANT = STEP_METERS*(float)1000000000; 
 
 // Termistor definition
@@ -61,13 +57,15 @@ long targetTemp10 = (long)CFG_TEMP_INIT*10;
 long pid_integral = 0;
 long pid_lastError = 0;
 bool EndPetTapeFlag = false;
+bool SlimStopFlag = true;
 bool Heat = false;
 bool runMotor = false;
 
 int whatToChange = CHANGE_NO;
 unsigned long interactive = millis();
 
-// 
+// Битовые маски для управления двигателем и нагревателем в прерывании
+// рссчитываются заранее в setup
 uint8_t motor_bit;
 uint8_t heater_bit;
 
@@ -77,14 +75,6 @@ uint8_t heater_bit;
 
 void setup() {
   wdt_enable(WDTO_4S);
-
-#if defined(SERIAL_DEBUG_TEMP) || defined(SERIAL_DEBUG_STEPPER) || defined(SERIAL_DEBUG_TEMP_PID)
-  Serial.begin(9600);
-#endif //SERIAL_DEBUG_TEMP || SERIAL_DEBUG_STEPPER
-
-#if defined(__LGT8F__)
-  analogReadResolution(10);
-#endif
 
   pinMode(CFG_EMENDSTOP_PIN, INPUT_PULLUP);
   pinMode(CFG_LENGHT_PIN, INPUT_PULLUP);
@@ -189,7 +179,7 @@ void loop() {
 // 10  раз в секунду
   if (millis() - spinnerTimer >= 100) {
     spinnerTimer = millis();
-    oled_printCharBig(108, 6, spinner[spinnerIdx], false);
+    oled_printChar(120, 7, spinner[spinnerIdx], false);
     // В двое медленне, здесь опрос температуры !!! и расчет пида
     if (spinnerIdx % 2) {
       // TEMPERATURE ---------------------------
@@ -213,8 +203,9 @@ void loop() {
   }
 
   // Если новых импульсов нет больше 3 секунд — считаем, что скорость 0
+  // флаг указывает на то что ранее измеренная скорость не равна 0
   // и плавно заполняем кольцевой буфер ULONG_MAX / 32
-  if (micros() - lastTimeInterrupt > 3000000) {
+  if (SlimStopFlag && micros() - lastTimeInterrupt > 3000000) {
     noInterrupts();
     eed_sum -= enc_event_duration[eed_idx];
     // (~0UL) >> 5 = ULONG_MAX / 32
@@ -242,10 +233,16 @@ void loop() {
     float CurrentFilamentSpeed;
     if(avgDuration == (~0UL) >> 5) {
       CurrentFilamentSpeed = 0.0;
+      // Отключить проверку на наличие прерываний
+      // для плавного уменьшения показателя скорости на экране
+      // т.к. скорость уже 0
+      SlimStopFlag = false;
     } else if(avgDuration != 0) {
       CurrentFilamentSpeed = SPEED_CONSTANT / (float)avgDuration;
+      SlimStopFlag = true;
     } else {
       CurrentFilamentSpeed = 0.0;
+      SlimStopFlag = false;
     }
     float FilamentLength = (float)copyFilamentTiks*STEP_METERS;
     printMillageAndSpeed(FilamentLength, CurrentFilamentSpeed);
@@ -322,7 +319,6 @@ void loop() {
       noInterrupts();
       heater_pwm_threshold = 0;
       interrupts();
-      digitalWrite(CFG_HEATER_PIN, LOW);   // Гасим нагрев немедленно
       digitalWrite(CFG_STEP_EN_PIN, HIGH); // Снимаем ток с мотора (свободное вращение)
       printHeaterStatus(Heat);
       printMotorStatus(runMotor);
@@ -338,7 +334,8 @@ void loop() {
 // Обработка прерывания от датчика длины прутка
 void LengthEvent(void) {
   // debug code
-  digitalWrite(13, !digitalRead(13));
+  //digitalWrite(13, !digitalRead(13));
+  TOGGLE_LED;
 
   unsigned long currentTime = micros();
   unsigned long duration = currentTime - lastTimeInterrupt;

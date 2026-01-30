@@ -38,7 +38,6 @@ void setup() {
   OCR1A = pgm_read_word(&step_table[CFG_SPEED_INIT]); // Начальное значение
   TIMSK1 |= _BV(OCIE1A);           // Разрешить прерывание
   interrupts();
-    
   // подключение обработки прерывания по сигналу от энкодера ленты
   attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(CFG_LENGHT_PIN), LengthEventISR, RISING);
 
@@ -66,6 +65,7 @@ void setup() {
   printHeaterStatus();
   printMotorStatus();
   printTapeStatus();
+  printMillageAndSpeed(0.0, 0.0);
 }
 
 
@@ -112,6 +112,7 @@ void interfaceEncoderISR() {
   static unsigned long lastStep = 0;
 
   uint8_t currentState = (PIND >> 2) & 0x03;
+  currentState ^= 0x03; // Сдвиг фазы энкодера
   state = (state << 2) | currentState;
   int8_t res = encTable[state & 0x0F]; // оставить только младшие 4 бита
 
@@ -192,10 +193,13 @@ void loop() {
     if (++spinnerIdx >= 4) spinnerIdx = 0;
   }
 
-  // Если новых импульсов нет больше 3 секунд — считаем, что скорость 0
+  // Если новых импульсов нет больше 5 секунд — считаем, что скорость 0
   // флаг указывает на то что ранее измеренная скорость не равна 0
   // и плавно заполняем кольцевой буфер ULONG_MAX / 32
-  if (SlimStopFlag && micros() - lastTimeInterrupt > 3000000) {
+  noInterrupts();
+  unsigned long copyLastTimeInterrupt = lastTimeInterrupt;
+  interrupts();
+  if (SlimStopFlag && micros() - copyLastTimeInterrupt > 5000000) {
     noInterrupts();
     eed_sum -= enc_event_duration[eed_idx];
     // (~0UL) >> 5 = ULONG_MAX / 32
@@ -257,7 +261,7 @@ void loop() {
   if (deltaTemp != 0) {
     int8_t copyDelta = deltaTemp; // Копируем 1 байт (безопасно)
     deltaTemp = 0;                // Сбрасываем (безопасно)
-    targetTemp10 = constrain(targetTemp10 + copyDelta*10, CFG_TEMP_MIN*10, CFG_TEMP_MAX_X10);
+    targetTemp10 = constrain(targetTemp10 + copyDelta*10, CFG_TEMP_MIN_X10, CFG_TEMP_MAX_X10);
     encLastActivity = millis();
     printTargetTemp();
   }
@@ -422,7 +426,7 @@ long getTemp() {
   uint16_t raw = analogRead(CFG_TERM_PIN);
   // после переключения мультиплексора на нужный пин
   // дать небольшой таймаут для выравниваия потенциала
-  delayMicroseconds(13);          
+  delayMicroseconds(13);
   raw = analogRead(CFG_TERM_PIN);
 
   // 2. Алгоритм скользящего среднего

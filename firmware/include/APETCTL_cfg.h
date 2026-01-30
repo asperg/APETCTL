@@ -22,7 +22,7 @@
 /* Maximum allowed temperature [degree C], allowed to set to 10 degree less */
 #define CFG_TEMP_MAX_X10 3300
 /* Minimum allowed temperature to set [degree C] */
-#define CFG_TEMP_MIN 120
+#define CFG_TEMP_MIN_X10 1200
 /* Which pin termistor connected to*/
 #define CFG_TERM_PIN A0
 /* Which pin emergency endstop connected to */
@@ -30,8 +30,8 @@
 
 /* PID regulator coefficients */
 //PID p: 12.69  PID i: 0.71 PID d: 57.11
-#define CFG_PID_P 1000
-#define CFG_PID_I 3
+#define CFG_PID_P 2000
+#define CFG_PID_I 5
 #define CFG_PID_D 1000
 
 /* Which pin heater MOSFET connected to 

@@ -30,9 +30,9 @@
 
 /* PID regulator coefficients */
 //PID p: 12.69  PID i: 0.71 PID d: 57.11
-#define CFG_PID_P 12.7
-#define CFG_PID_I 0.7
-#define CFG_PID_D 57.1
+#define CFG_PID_P 1000
+#define CFG_PID_I 3
+#define CFG_PID_D 1000
 
 /* Which pin heater MOSFET connected to 
 Из за особенностей кода может быть от 8 до 13 пина.

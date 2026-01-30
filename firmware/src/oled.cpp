@@ -14,6 +14,7 @@ void oled_cmd(uint8_t cmd) {
 // 2. Инициализация (минимальный набор)
 void oled_init() {
     Wire.begin();
+    Wire.setWireTimeout(3000, true);
     Wire.setClock(400000);
     uint8_t init[] = {
       0xAE,             // Дисплей выкл

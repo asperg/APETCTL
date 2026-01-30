@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <avr/wdt.h>
-#include "PinChangeInterrupt.h"
+#include <PinChangeInterrupt.h>
 #include "temp_table.h"
 #include "functions.h"
 #include "oled.h"
@@ -29,18 +29,14 @@ void setup() {
   digitalWrite(CFG_STEP_EN_PIN, HIGH);  // Выключаем мотор (активный LOW)
   digitalWrite(CFG_STEP_DIR_PIN, LOW);  // Направление по умолчанию
   PORTD &= ~motor_bit;                  // Перевести пин STEP в 0
+  SET_LED_OUTPUT;
 
-  // Настройка Таймеров
+  // Настройка Таймера, для работы двигателя
   noInterrupts();
   TCCR1A = 0;
   TCCR1B = _BV(WGM12) | _BV(CS11); // Режим CTC, предделитель 8 (0.5 мкс)
   OCR1A = pgm_read_word(&step_table[CFG_SPEED_INIT]); // Начальное значение
   TIMSK1 |= _BV(OCIE1A);           // Разрешить прерывание
-  // Настройка Timer2: частота 1кГц (период 1мс)
-  TCCR2A = _BV(WGM21);             // Режим CTC (сброс при совпадении)
-  TCCR2B = _BV(CS22) | _BV(CS21) | _BV(CS20); // Предделитель 1024
-  OCR2A = 15;                      // (16MHz / 1024 / 1000Hz) - 1 = 14.6 -> 15
-  TIMSK2 |= _BV(OCIE2A);           // Разрешить прерывание по совпадению A
   interrupts();
     
   // подключение обработки прерывания по сигналу от энкодера ленты
@@ -61,15 +57,24 @@ void setup() {
   adc_sum = (uint32_t)startAdc * RING_BUFFER_SIZE;
   eed_sum = ((~0UL) >> 5) * RING_BUFFER_SIZE;
 
-  // инициализация прерываний энкодера
-  attachInterrupt(0, encoderISR, CHANGE); // Пин 2
-  attachInterrupt(1, encoderISR, CHANGE); // Пин 3
+  // Разрешаем аппаратные прерывания INT0 и INT1
+  EICRA |= (1 << ISC00) | (1 << ISC10); // Устанавливаем режим CHANGE для обоих
+  EIMSK |= (1 << INT0) | (1 << INT1);   // Включаем их
 
   printTargetSpeed();
   printTargetTemp();
   printHeaterStatus();
   printMotorStatus();
   printTapeStatus();
+}
+
+
+ISR(INT0_vect) {
+  interfaceEncoderISR();
+}
+
+ISR(INT1_vect) {
+  interfaceEncoderISR();
 }
 
 // обработчики прерываний
@@ -102,7 +107,7 @@ ISR(TIMER1_COMPA_vect) {
 }
 
 // обработчик энкодера интерфейса
-void encoderISR() {
+void interfaceEncoderISR() {
   static uint8_t state = 0;
   static unsigned long lastStep = 0;
 
@@ -110,21 +115,20 @@ void encoderISR() {
   state = (state << 2) | currentState;
   int8_t res = encTable[state & 0x0F]; // оставить только младшие 4 бита
 
+  if (res == 0) return; 
+  if (currentMode == InerfaceMode::IDLE) return;
   // ничего не считать если интерфейс в состоянии простоя (отображения)
-  if (res != 0 && currentMode != InerfaceMode::IDLE) {
-    subStep += res;
-    if (abs(subStep) >= 4) { // Когда прошли все 4 фазы щелчка
+  subStep += res;
+  if (abs(subStep) >= 4) { // Когда прошли все 4 фазы щелчка
+    unsigned long now = millis();
+    int8_t step = (now - lastStep < 50) ? 5 : 1;
+    int8_t dir = (subStep > 0) ? 1 : -1;
 
-      unsigned long now = millis();
-      int8_t step = (now - lastStep < 50) ? 5 : 1;
-      int8_t dir = (subStep > 0) ? 1 : -1;
+    if (currentMode == InerfaceMode::EDIT_TEMP) deltaTemp += dir * step;
+    else if (currentMode == InerfaceMode::EDIT_SPEED) deltaSpeed += dir * step;
 
-      if (currentMode == InerfaceMode::EDIT_TEMP) deltaTemp += dir * step;
-      else if (currentMode == InerfaceMode::EDIT_SPEED) deltaSpeed += dir * step;
-
-      lastStep = now;
-      subStep = 0; // Сброс накопителя
-    }
+    lastStep = now;
+    subStep = 0; // Сброс накопителя
   }
 }
 
@@ -273,6 +277,7 @@ void loop() {
     EndPetTapeFlag = true;
     if(runMotor || Heat) {
       runMotor = false;
+      currentSpeedX10 = SPEED_MIN10;
       Heat = false;
       noInterrupts();
       heater_pwm_threshold = 0;
@@ -291,6 +296,8 @@ void loop() {
   // Таймаут возврата интерфейса в IDLE 15 секунд
   if (currentMode != InerfaceMode::IDLE && (millis() - encLastActivity > 15000)) {
     currentMode = InerfaceMode::IDLE;
+    printTargetTemp();
+    printTargetSpeed();
   }
 }
 
@@ -321,6 +328,8 @@ void handleEncButton() {
           runMotor = ! runMotor;
           if(!runMotor) {
             currentSpeedX10 = SPEED_MIN10;
+          } else {
+            motorCTL(currentSpeedX10);
           }
           printMotorStatus();
         }
@@ -348,9 +357,11 @@ void handleEncButton() {
     if (encClickCount == 1) { 
       currentMode = InerfaceMode::EDIT_TEMP;
       printTargetTemp();
+      printTargetSpeed();
     }
     else { 
       currentMode = InerfaceMode::EDIT_SPEED;
+      printTargetTemp();
       printTargetSpeed();
     }
     encClickCount = 0;
@@ -445,12 +456,13 @@ int computePID(void) {
     return 0;
   } 
    // Коэффициенты (подобраны с множителем 10)
-  long Kp = (long)CFG_PID_P*10;
-  long Ki = (long)CFG_PID_I*10;
-  long Kd = (long)CFG_PID_D*10;
+  long Kp = (long)CFG_PID_P;
+  long Ki = (long)CFG_PID_I;
+  long Kd = (long)CFG_PID_D;
 
-  // Лимиты для анти-виндапа (защита от разгона интеграла)
-  const long i_limit = 2550; 
+  // Увеличиваем лимит! Интеграл должен уметь "заполнить" весь ШИМ
+  // Лимит считаем так: (255 * 1000) / Ki
+  const long i_limit = 30000; 
   long error = targetTemp10 - curTempX10;
   // 1. Пропорциональная часть
   long P = Kp * error;
@@ -466,8 +478,8 @@ int computePID(void) {
   pid_lastError = error;
 
   // Итоговый результат с обратным масштабированием
-  // Делим на 100, так как K и Temp оба имеют множители
-  long output = (P + I + D) / 100;
+  // Делим на 1000, так как K и Temp оба имеют множители
+  long output = (P + I + D) / 1000;
 
   // Ограничиваем под ШИМ 0-255
   if (output > 255) output = 255;

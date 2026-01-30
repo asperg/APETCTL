@@ -7,11 +7,10 @@ void emStop(int reason);
 void motorCTL(long setSpeedX10);
 void encRotationToValue (long* value, int inc, long minValue, long maxValue);
 void interactiveSet();
-boolean isInteractive();
 long getTemp();
 int computePID(void);
 void LengthEventISR(void);
-void encoderISR();
+void interfaceEncoderISR();
 void handleEncButton();
 
 //from functions.cpp

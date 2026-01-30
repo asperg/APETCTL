@@ -1,10 +1,10 @@
 #include "functions.h"
-#include "PETCTL_cfg.h"
 #include "oled.h"
+#include "globals.h"
 
 void SplashScreen(void) {
   oled_printStrBig(22, 2, "APETctl", false);
-  oled_printStr(31, 5, "asper V 1.0", false);
+  oled_printStr(31, 5, "asper V 2.0", false);
 
   uint8_t startX = 26;
   for (uint8_t i = 0; i < 3; i++) {
@@ -20,9 +20,9 @@ void SplashScreen(void) {
 }
 
 void printMillageAndSpeed(float m, float s) {
-  
-  if(s > (float)SPEED_MAX) {
-    s = (float)SPEED_MAX;
+
+  if(s > (float)SPEED_MAX10/10.0) {
+    s = (float)SPEED_MAX10/10.0;
   }
  
   // Вывести Метраж, мусора не будет т.к. только нарастает :)
@@ -31,24 +31,23 @@ void printMillageAndSpeed(float m, float s) {
   oled_printFloat(12, 2, s, 1, true, false);
 }
 
-void printTargetTemp(long t){
-      long TargetTemp = t/10;
-      if(whatToChange == CHANGE_TEMPERATURE)  {
-        oled_printInt(88, 0, TargetTemp, true, true);
+void printTargetTemp(){
+      if(currentMode == InerfaceMode::EDIT_TEMP)  {
+        oled_printInt(88, 0, targetTemp10/10, true, true);
       } else {
-        oled_printInt(88, 0, TargetTemp, true, false);
+        oled_printInt(88, 0, targetTemp10/10, true, false);
       }
 }
 
 //Входной параметр температура X10
-void printCurrentTemp(long t) {
+void printCurrentTemp() {
   char buf[6]; // "123.5" + \0
   buf[5] = '\0'; // Завершаем строку
   buf[3] = '.';  // Точка всегда на этом месте
   
   // Дробная часть (последняя цифра)
-  buf[4] = (t % 10) + '0';
-  int val = t / 10; // Целая часть
+  buf[4] = (curTempX10 % 10) + '0';
+  int val = curTempX10 / 10; // Целая часть
   // Единицы
   buf[2] = (val % 10) + '0';
   val /= 10;
@@ -62,31 +61,31 @@ void printCurrentTemp(long t) {
   oled_printStrBig(12, 0, buf, false);
 }
 
-void printTargetSpeed(long s){
-  if(whatToChange == CHANGE_SPEED)  {
-    oled_printFloat(88, 2, (float)s/10.0, 1, true, true);
+void printTargetSpeed(){
+  if(currentMode == InerfaceMode::EDIT_SPEED)  {
+    oled_printFloat(88, 2, (float)targetSpeedX10/10.0, 1, true, true);
   } else {
-    oled_printFloat(88, 2, (float)s/10.0, 1, true, false);
+    oled_printFloat(88, 2, (float)targetSpeedX10/10.0, 1, true, false);
   }
 }
 
-void printHeaterStatus(bool status) {
-  if(status) 
+void printHeaterStatus() {
+  if(Heat) 
     oled_printCharBig(0, 0, '*', false);
   else
     oled_printCharBig(0, 0, '.', false);
 }
 
-void printMotorStatus(bool status) {
-  if(status) 
+void printMotorStatus() {
+  if(runMotor) 
     oled_printCharBig(0, 2, '*', false);
   else
     oled_printCharBig(0, 2, '.', false);
 }
 
 
-void printTapeStatus(bool status) {
-  if(status) 
+void printTapeStatus() {
+  if(EndPetTapeFlag) 
     oled_printCharBig(0, 6, 'X', false);
   else
     oled_printCharBig(0, 6, ' ', false);

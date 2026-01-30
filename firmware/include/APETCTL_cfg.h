@@ -1,3 +1,5 @@
+#ifndef APETCFG_H
+#define APETCFG_H
 /* Which pin stepper driver STEP pin connected 
 из за особеннойстей кода STEP pin должен быть
 в диапазоне от 0 до 7
@@ -8,15 +10,12 @@
 /* Which pin stepper driver EN pin connected */
 #define CFG_STEP_EN_PIN 7
 
-/* Which pin encoder CLK pin connected */
+/* Which pin encoder CLK pin connected 
+   Which pin encoder DT pin connected 
+   HARDCODE Do Not Change this*/
 #define CFG_ENC_CLK 2
-/* Which pin encoder DT pin connected */
 #define CFG_ENC_DT 3
-/* Which pin encoder SW pin connected */
 #define CFG_ENC_SW 4
-/* Type of encoder: TYPE1 or TYPE2 */
-#define CFG_ENC_TYPE TYPE2
-
 
 /* Initial target temperature [degree C]*/
 #define CFG_TEMP_INIT 250
@@ -48,8 +47,6 @@
 /* Initial pull speed [mm/s] */
 #define CFG_SPEED_INIT 2
 
-#define SPEED_MAX 9.9
-#define SPEED_MIN 1.1
 /* Interactive statuses */
 #define CHANGE_NO 0
 #define CHANGE_TEMPERATURE 1
@@ -77,3 +74,5 @@ const uint16_t step_table[] PROGMEM = {
   594,    587,   580,   573,   566,  559,  553,  546,  540,  534, // 8.0 - 8.9
   528,    522,   517,   511,   506,  500,  495,  490,  485,  480  // 9.0 - 9.9
 };
+
+#endif

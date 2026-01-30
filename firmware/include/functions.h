@@ -1,14 +1,26 @@
 #ifndef FUNCTIONS_H
 #define FUNCTIONS_H
 #include <Arduino.h>
-extern int whatToChange;
 
-void printTargetTemp(long t);
-void printCurrentTemp(long t);
-void printTargetSpeed(long s);
-void printHeaterStatus(boolean status);
-void printMotorStatus(boolean status);
-void printTapeStatus(boolean status);
+// from main.cpp
+void emStop(int reason);
+void motorCTL(long setSpeedX10);
+void encRotationToValue (long* value, int inc, long minValue, long maxValue);
+void interactiveSet();
+boolean isInteractive();
+long getTemp();
+int computePID(void);
+void LengthEventISR(void);
+void encoderISR();
+void handleEncButton();
+
+//from functions.cpp
+void printTargetTemp();
+void printCurrentTemp();
+void printTargetSpeed();
+void printHeaterStatus();
+void printMotorStatus();
+void printTapeStatus();
 void SplashScreen(void);
 void printMillageAndSpeed(float m, float s);
 

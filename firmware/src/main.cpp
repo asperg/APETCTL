@@ -1,89 +1,28 @@
 #include <Arduino.h>
 #include <avr/wdt.h>
 #include "PinChangeInterrupt.h"
-#include "PETCTL_cfg.h"
 #include "temp_table.h"
 #include "functions.h"
 #include "oled.h"
+#include "globals.h"
 
-// Functions prototype
-void emStop(int reason);
-void motorCTL(long setSpeedX10);
-void encRotationToValue (long* value, int inc, long minValue, long maxValue);
-void interactiveSet();
-boolean isInteractive();
-long getTemp();
-void LengthEvent(void);
-int computePID(void);
-
-#define TOGGLE_LED (PINB = (1 << 5)) //　Переключить встроенный светодиод
-#define SET_LED_OUTPUT (DDRB |= (1 << 5)) // Перевести PIN 13 в режим OUTPUT получится яркий светодиод
-#define CLK CFG_ENC_CLK
-#define DT CFG_ENC_DT
-#define SW CFG_ENC_SW
-#include "GyverEncoder.h"
-Encoder enc1(CLK, DT, SW);
-
-volatile uint32_t heater_pwm_threshold = 0;       // Предел времени для ШИМ нагревателя
-uint32_t heater_timer_acc = 0;                    // Аккумулятор микросекунд для ШИМ нагревателя
-volatile unsigned long lastTimeInterrupt = 0;     // Время предыдущего прерывания от энкодера длинны
-volatile unsigned long FilamentTiks = 0;          // Сколько всего натикал энкодер
-volatile bool newDataFlag = false;                // Флаг, что данные обновились
-
-long targetSpeedX10 = (float)CFG_SPEED_INIT * 10; // То, что мы выставили энкодером
-long currentSpeedX10 = (float)SPEED_MIN * 10;     // Реальная скорость в данный момент
-uint32_t accelTimer = 0;                          // Таймер для шага разгона
-#define ACCEL_STEP_MS 50                          // Интервал изменения скорости (мс)
-
-#define RING_BUFFER_SIZE 16
-uint16_t adc_buffer[RING_BUFFER_SIZE]; // массив для хранения последних 16 значений АЦП
-uint8_t adc_idx = 0;                   // текущий индекс в массиве
-uint32_t adc_sum = 0;                  // текущая сумма всех значений в буфере
-
-//Кольцевой буффер для длительности между прерываниями энкодера
-unsigned long enc_event_duration[RING_BUFFER_SIZE];
-uint8_t eed_idx = 0;
-volatile unsigned long eed_sum = 0;
-
-// Метров за один импульс
-const float STEP_METERS = (float)CFG_ENC_DIAM*(float)0.0031415926/(float)CFG_ENC_IMP;
-// Коэффициент для расчета текущей скорости ленты 
-const float SPEED_CONSTANT = STEP_METERS*(float)1000000000; 
-
-// Termistor definition
-long curTempX10 = 0;
-long targetTemp10 = (long)CFG_TEMP_INIT*10;
-// for pid regulator
-long pid_integral = 0;
-long pid_lastError = 0;
-bool EndPetTapeFlag = false;
-bool SlimStopFlag = true;
-bool Heat = false;
-bool runMotor = false;
-
-int whatToChange = CHANGE_NO;
-unsigned long interactive = millis();
-
-// Битовые маски для управления двигателем и нагревателем в прерывании
-// рссчитываются заранее в setup
-uint8_t motor_bit;
-uint8_t heater_bit;
-
-/* Emergency stop reasons */
-#define OVERHEAT 1
-#define THERMISTOR_ERROR 2
 
 void setup() {
   wdt_enable(WDTO_4S);
 
-  pinMode(CFG_EMENDSTOP_PIN, INPUT_PULLUP);
-  pinMode(CFG_LENGHT_PIN, INPUT_PULLUP);
+  pinMode(CFG_EMENDSTOP_PIN, INPUT_PULLUP);  // Концевик конца или обрыва ленты
+  pinMode(CFG_LENGHT_PIN, INPUT_PULLUP);     // Энкодер - измерение длины 
+  pinMode(CFG_ENC_CLK, INPUT_PULLUP);        // Энкодер - управление интерфейсом
+  pinMode(CFG_ENC_DT, INPUT_PULLUP);         //   -//-
+  pinMode(CFG_ENC_SW, INPUT_PULLUP);         //   -//-
   // Настройка пинов управления двигателем
   pinMode(CFG_STEP_STEP_PIN, OUTPUT); // Пин 6
   pinMode(CFG_STEP_DIR_PIN, OUTPUT);  // Пин 5
   pinMode(CFG_STEP_EN_PIN, OUTPUT);   // Пин 7
   pinMode(CFG_HEATER_PIN, OUTPUT);    // Нагреватель
 
+  // Заранее вычислить битовые маски для пинов
+  // шаг двигателем и нагревателя
   motor_bit = digitalPinToBitMask(CFG_STEP_STEP_PIN);
   heater_bit = digitalPinToBitMask(CFG_HEATER_PIN);
 
@@ -104,15 +43,12 @@ void setup() {
   TIMSK2 |= _BV(OCIE2A);           // Разрешить прерывание по совпадению A
   interrupts();
     
-  // подключение обработки прерывания по сигналу от датчика
-  attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(CFG_LENGHT_PIN), LengthEvent, RISING);
+  // подключение обработки прерывания по сигналу от энкодера ленты
+  attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(CFG_LENGHT_PIN), LengthEventISR, RISING);
 
   oled_init();
   oled_clear();
   SplashScreen();
-
-  enc1.setType(CFG_ENC_TYPE);
-  enc1.setPinMode(LOW_PULL);
 
   // Заполнить кольцевой буффер АЦП текущим значением из АЦП
   // кольцевой буффер длительности событий заполнить 
@@ -125,18 +61,18 @@ void setup() {
   adc_sum = (uint32_t)startAdc * RING_BUFFER_SIZE;
   eed_sum = ((~0UL) >> 5) * RING_BUFFER_SIZE;
 
-  printTargetSpeed(targetSpeedX10);
-  printTargetTemp(targetTemp10);
-  printHeaterStatus(Heat);
-  printMotorStatus(runMotor);
-  printTapeStatus(EndPetTapeFlag);
+  // инициализация прерываний энкодера
+  attachInterrupt(0, encoderISR, CHANGE); // Пин 2
+  attachInterrupt(1, encoderISR, CHANGE); // Пин 3
+
+  printTargetSpeed();
+  printTargetTemp();
+  printHeaterStatus();
+  printMotorStatus();
+  printTapeStatus();
 }
 
-// обработчик
-ISR(TIMER2_COMPA_vect) {
-  enc1.tick();
-}
-
+// обработчики прерываний
 // обработчик двигателя, шагаем двигателм здесь !!!!!
 ISR(TIMER1_COMPA_vect) {
   // 1. Мотор (максимальный приоритет по времени)
@@ -165,12 +101,62 @@ ISR(TIMER1_COMPA_vect) {
   }
 }
 
+// обработчик энкодера интерфейса
+void encoderISR() {
+  static uint8_t state = 0;
+  static unsigned long lastStep = 0;
+
+  uint8_t currentState = (PIND >> 2) & 0x03;
+  state = (state << 2) | currentState;
+  int8_t res = encTable[state & 0x0F]; // оставить только младшие 4 бита
+
+  // ничего не считать если интерфейс в состоянии простоя (отображения)
+  if (res != 0 && currentMode != InerfaceMode::IDLE) {
+    subStep += res;
+    if (abs(subStep) >= 4) { // Когда прошли все 4 фазы щелчка
+
+      unsigned long now = millis();
+      int8_t step = (now - lastStep < 50) ? 5 : 1;
+      int8_t dir = (subStep > 0) ? 1 : -1;
+
+      if (currentMode == InerfaceMode::EDIT_TEMP) deltaTemp += dir * step;
+      else if (currentMode == InerfaceMode::EDIT_SPEED) deltaSpeed += dir * step;
+
+      lastStep = now;
+      subStep = 0; // Сброс накопителя
+    }
+  }
+}
+
+// Обработка прерывания от датчика длины прутка
+void LengthEventISR(void) {
+  // debug code
+  //digitalWrite(13, !digitalRead(13));
+  TOGGLE_LED;
+
+  unsigned long currentTime = micros();
+  unsigned long duration = currentTime - lastTimeInterrupt;
+
+  if (duration > 0) {
+    eed_sum -= enc_event_duration[eed_idx];
+    enc_event_duration[eed_idx] = duration;
+    eed_sum += duration;
+    eed_idx++;
+    if (eed_idx >= RING_BUFFER_SIZE) eed_idx = 0;
+    //unsigned long avgDuration = eed_sum >> 4;
+    //Считаем скорость: дистанция / время
+    //вынесу рассчет в модул вывода на экран
+    //CurrentFilamentSpeed = SPEED_CONSTANT / (float)avgDuration;
+    FilamentTiks++;
+    lastTimeInterrupt = currentTime;
+    newDataFlag = true; // Сообщаем основному циклу, что надо обновить экран
+  }
+}
+
+
 void loop() {
   wdt_reset();
-  enc1.tick();
 
-  long newTargetTemp = targetTemp10/10;
-  long newSpeedX10 = targetSpeedX10;
   const char spinner[] = {'-', '\\', '|', '/'};
   static uint8_t spinnerIdx = 0;
   static uint32_t spinnerTimer = 0;
@@ -197,7 +183,7 @@ void loop() {
         heater_pwm_threshold = 0;
         interrupts();
       }
-      printCurrentTemp(curTempX10);
+      printCurrentTemp();
     }
     if (++spinnerIdx >= 4) spinnerIdx = 0;
   }
@@ -262,50 +248,22 @@ void loop() {
     }
   }
 
-  if (enc1.isDouble()) {
-    whatToChange = CHANGE_SPEED;
-    interactiveSet();
-    printTargetTemp(targetTemp10); // to clear selection
-    printTargetSpeed(targetSpeedX10);
-  }
-  if (enc1.isSingle()) {
-    whatToChange = CHANGE_TEMPERATURE;
-    interactiveSet();
-    printTargetSpeed(targetSpeedX10); // to clear selection
-    printTargetTemp(targetTemp10);
-  }
-  if (!isInteractive()) {
-    whatToChange = CHANGE_NO;
-    printTargetSpeed(targetSpeedX10); // to clear selection
-    printTargetTemp(targetTemp10);
+  handleEncButton();
+
+  if (deltaTemp != 0) {
+    int8_t copyDelta = deltaTemp; // Копируем 1 байт (безопасно)
+    deltaTemp = 0;                // Сбрасываем (безопасно)
+    targetTemp10 = constrain(targetTemp10 + copyDelta*10, CFG_TEMP_MIN*10, CFG_TEMP_MAX_X10);
+    encLastActivity = millis();
+    printTargetTemp();
   }
 
-  if( whatToChange == CHANGE_TEMPERATURE) {
-    encRotationToValue(&newTargetTemp, 1, CFG_TEMP_MIN, CFG_TEMP_MAX_X10/10 - 10);
-    if (enc1.isHolded()){
-      Heat = ! Heat;
-      printHeaterStatus(Heat);
-    }
-
-    if (newTargetTemp*10 != targetTemp10) {
-      targetTemp10 = newTargetTemp*10;
-      printTargetTemp(targetTemp10);
-    }
-  } else if (whatToChange == CHANGE_SPEED) {
-    encRotationToValue(&newSpeedX10, 1, SPEED_MIN * 10, SPEED_MAX * 10);
-    if (enc1.isHolded()) {
-      runMotor = ! runMotor;
-      //Если мотор выключили, установить минимальную скорость
-      if(!runMotor) {
-        currentSpeedX10 = (long)((float)SPEED_MIN * 10.0);
-      }
-      interactiveSet();
-      printMotorStatus(runMotor);
-    }
-    if (newSpeedX10 != targetSpeedX10) {
-      targetSpeedX10 = newSpeedX10;
-      printTargetSpeed(targetSpeedX10);
-    }
+  if (deltaSpeed != 0) {
+    int8_t copyDelta = deltaSpeed;
+    deltaSpeed = 0;
+    targetSpeedX10 = constrain(targetSpeedX10 + copyDelta, SPEED_MIN10, SPEED_MAX10);
+    encLastActivity = millis();
+    printTargetSpeed();
   }
 
   // Обработка датчика конца ПЭТ ленты
@@ -320,39 +278,82 @@ void loop() {
       heater_pwm_threshold = 0;
       interrupts();
       digitalWrite(CFG_STEP_EN_PIN, HIGH); // Снимаем ток с мотора (свободное вращение)
-      printHeaterStatus(Heat);
-      printMotorStatus(runMotor);
+      printHeaterStatus();
+      printMotorStatus();
     }
-    printTapeStatus(EndPetTapeFlag);
+    printTapeStatus();
   // если произошло отпускание датчика
   } else if(digitalRead(CFG_EMENDSTOP_PIN) && EndPetTapeFlag) {
     EndPetTapeFlag = false;
-    printTapeStatus(EndPetTapeFlag);
+    printTapeStatus();
   } 
+
+  // Таймаут возврата интерфейса в IDLE 15 секунд
+  if (currentMode != InerfaceMode::IDLE && (millis() - encLastActivity > 15000)) {
+    currentMode = InerfaceMode::IDLE;
+  }
 }
 
-// Обработка прерывания от датчика длины прутка
-void LengthEvent(void) {
-  // debug code
-  //digitalWrite(13, !digitalRead(13));
-  TOGGLE_LED;
+void handleEncButton() {
+  static bool lastSw = HIGH;
+  static unsigned long pressStartTime = 0; // Время начала нажатия
+  static bool longPressHandled = false;    // Чтобы не срабатывать по кругу при удержании
 
-  unsigned long currentTime = micros();
-  unsigned long duration = currentTime - lastTimeInterrupt;
+  uint8_t pins = PIND; 
+  bool sw  = pins & ENC_MASK_SW;
 
-  if (duration > 0) {
-    eed_sum -= enc_event_duration[eed_idx];
-    enc_event_duration[eed_idx] = duration;
-    eed_sum += duration;
-    eed_idx++;
-    if (eed_idx >= RING_BUFFER_SIZE) eed_idx = 0;
-    //unsigned long avgDuration = eed_sum >> 4;
-    //Считаем скорость: дистанция / время
-    //вынесу рассчет в модул вывода на экран
-    //CurrentFilamentSpeed = SPEED_CONSTANT / (float)avgDuration;
-    FilamentTiks++;
-    lastTimeInterrupt = currentTime;
-    newDataFlag = true; // Сообщаем основному циклу, что надо обновить экран
+  // 1. МОМЕНТ НАЖАТИЯ (Фронт вниз)
+  if (sw == LOW && lastSw == HIGH) {
+    pressStartTime = millis();
+    longPressHandled = false;
+    encLastActivity = millis();
+  }
+
+  // 2. ПРОВЕРКА УДЕРЖАНИЯ (Кнопка всё еще нажата)
+  if (sw == LOW && !longPressHandled) {
+    if (millis() - pressStartTime > 1000) { // Если держим больше 1 секунды
+      // ДЕЙСТВИЕ НА УДЕРЖАНИЕ
+      if ( currentMode != InerfaceMode::IDLE ) {
+        if ( currentMode == InerfaceMode::EDIT_TEMP ) {
+          Heat = ! Heat;
+          printHeaterStatus();
+        } else if ( currentMode == InerfaceMode::EDIT_SPEED ) {
+          runMotor = ! runMotor;
+          if(!runMotor) {
+            currentSpeedX10 = SPEED_MIN10;
+          }
+          printMotorStatus();
+        }
+      } 
+      longPressHandled = true; 
+      encClickCount = 0; // Сбрасываем клики, чтобы не сработал обычный клик после отпускания
+    }
+  }
+
+  // 3. МОМЕНТ ОТПУСКАНИЯ (Фронт вверх)
+  if (sw == HIGH && lastSw == LOW) {
+    if (!longPressHandled) { // Если это не было длинным нажатием
+      unsigned long now = millis();
+      if (now - encLastClickTime < 400) encClickCount++;
+      else encClickCount = 1;
+      encLastClickTime = now;
+    }
+  }
+
+  lastSw = sw;
+
+  // Проверить нажатие одно или два
+  // и нарисовать на экране в инверсии нужную строку
+  if (encClickCount > 0 && (millis() - encLastClickTime > 400)) {
+    if (encClickCount == 1) { 
+      currentMode = InerfaceMode::EDIT_TEMP;
+      printTargetTemp();
+    }
+    else { 
+      currentMode = InerfaceMode::EDIT_SPEED;
+      printTargetSpeed();
+    }
+    encClickCount = 0;
   }
 }
 
@@ -404,25 +405,6 @@ void motorCTL(long setSpeedX10) {
       digitalWrite(CFG_STEP_EN_PIN, HIGH); // Выключаем удержание
     }
   }
-}
-
-void encRotationToValue (long* value, int inc = 1, long minValue = 0, long maxValue = 0) {
-      if (enc1.isRight()) { *value += inc; interactiveSet(); }     // если был поворот направо, увеличиваем на 1
-      if (enc1.isFastR()) { *value += inc * 5; interactiveSet(); }    // если был быстрый поворот направо, увеличиваем на 10
-      if (enc1.isLeft())  { *value -= inc; interactiveSet(); }     // если был поворот налево, уменьшаем на 1
-      if (enc1.isFastL()) { *value -= inc * 5; interactiveSet(); }    // если был быстрый поворот налево, уменьшаем на на 10
-      //if (minValue > 0 && *value < minValue) *value = minValue;
-      if (*value < minValue) *value = minValue;
-      //if (maxValue > 0 && *value > maxValue) *value = maxValue;
-      if (*value > maxValue) *value = maxValue;
-}
-
-void interactiveSet() {
-  interactive = millis() + 15000;
-}
-
-boolean isInteractive() {
-  return millis() < interactive;
 }
 
 long getTemp() {

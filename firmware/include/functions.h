@@ -19,7 +19,7 @@ void printHeaterStatus();
 void printMotorStatus();
 void printTapeStatus();
 void SplashScreen(void);
-void printMillageAndSpeed(float m, float s);
+void printMillageAndSpeed(long m, long s);
 void motorCTL();
 void emStop(int reason);
 

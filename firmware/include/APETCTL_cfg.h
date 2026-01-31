@@ -41,8 +41,6 @@
 
 /* Энкодер длины протянутого прутка */
 #define CFG_LENGHT_PIN A2  //A2
-#define CFG_ENC_DIAM 10.4  // диаметр измерительного ролика в мм
-#define CFG_ENC_IMP 12   // импульсов на один оборот энкодера
 
 /* Initial pull speed [mm/s] */
 #define CFG_SPEED_INIT 2

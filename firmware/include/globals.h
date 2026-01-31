@@ -17,12 +17,10 @@
 
 
 extern volatile uint32_t heater_pwm_threshold;
-extern uint32_t heater_timer_acc;
 extern volatile unsigned long lastTimeInterrupt;
 extern volatile unsigned long FilamentTiks;
 extern volatile bool newDataFlag;
 extern long targetSpeedX10;
-extern int8_t subStep;
 extern volatile int8_t deltaTemp;  
 extern volatile int8_t deltaSpeed;
 extern const int8_t encTable[];
@@ -32,8 +30,6 @@ extern uint32_t adc_sum;
 extern unsigned long enc_event_duration[];
 extern uint8_t eed_idx;
 extern volatile unsigned long eed_sum;
-extern const float STEP_METERS;
-extern const float SPEED_CONSTANT; 
 extern long curTempX10;
 extern long targetTemp10;
 extern bool EndPetTapeFlag;

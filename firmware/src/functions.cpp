@@ -19,16 +19,34 @@ void SplashScreen(void) {
   oled_printChar(98, 7, 'm', false);
 }
 
-void printMillageAndSpeed(float m, float s) {
+void printMillageAndSpeed(long m, long s) {
 
-  if(s > (float)SPEED_MAX10/10.0) {
-    s = (float)SPEED_MAX10/10.0;
+  if(s > SPEED_MAX10) {
+    s = SPEED_MAX10;
   }
- 
-  // Вывести Метраж, мусора не будет т.к. только нарастает :)
-  oled_printFloat(12, 6, m, 3, true, false);
+  char buf[7]; // "99.999" + \0
+  buf[6] = '\0'; // Завершаем строку
+  buf[2] = '.';  // Точка всегда на этом месте
+  
+  // максимальное число милиметров 99999
+  // в метрах 99.999
+  buf[5] = (m % 10) + '0'; 
+  long val = m / 10; 
+  buf[4] = (val % 10) + '0';
+  val /= 10; 
+  buf[3] = (val % 10) + '0';
+  val /= 10;
+  buf[1] = (val % 10) + '0';
+  buf[0] = (val /= 10) + '0';
+  oled_printStrBig(12, 6, buf, false);
+  
+  // скорость максимум 99
+  buf[3] = '\0'; // Завершаем строку
+  buf[1] = '.';  // Точка всегда на этом месте
+  buf[2] = (s % 10) + '0';
+  buf[0] = (s / 10) + '0';
   // вывести реальную (не расчетную скорость)
-  oled_printFloat(12, 2, s, 1, true, false);
+  oled_printStrBig(12, 2, buf, false);
 }
 
 void printTargetTemp(){
@@ -62,10 +80,15 @@ void printCurrentTemp() {
 }
 
 void printTargetSpeed(){
+  char buf[4]; // "9.9" + \0
+  buf[3] = '\0';
+  buf[1] = '.';
+  buf[2] = (targetSpeedX10 % 10) + '0';
+  buf[0] = (targetSpeedX10 / 10) + '0';
   if(currentMode == InerfaceMode::EDIT_SPEED)  {
-    oled_printFloat(88, 2, (float)targetSpeedX10/10.0, 1, true, true);
+    oled_printStrBig(88, 2, buf, true);
   } else {
-    oled_printFloat(88, 2, (float)targetSpeedX10/10.0, 1, true, false);
+    oled_printStrBig(88, 2, buf, false);
   }
 }
 

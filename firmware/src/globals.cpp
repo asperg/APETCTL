@@ -1,15 +1,12 @@
 #include "globals.h"
 
 volatile uint32_t heater_pwm_threshold = 0;       // Предел времени для ШИМ нагревателя
-uint32_t heater_timer_acc = 0;                    // Аккумулятор микросекунд для ШИМ нагревателя
 volatile unsigned long lastTimeInterrupt = 0;     // Время предыдущего прерывания от энкодера длинны
 volatile unsigned long FilamentTiks = 0;          // Сколько всего натикал энкодер
 volatile bool newDataFlag = false;                // Флаг, что обновились скорость и метраж
 
 long targetSpeedX10 = (float)CFG_SPEED_INIT * 10; // То, что мы выставили энкодером
 
-// Переменные для обработки энкодера интерфейса
-int8_t subStep = 0; // Накопитель для 4-х фаз щелчка
 // чтобы не останавливать прерывания на время работы
 // с данными полученными в прерывании буду работать с
 // дельта буфером !!!
@@ -28,12 +25,6 @@ uint32_t adc_sum = 0;                  // текущая сумма всех з�
 unsigned long enc_event_duration[RING_BUFFER_SIZE];
 uint8_t eed_idx = 0;
 volatile unsigned long eed_sum = 0;
-
-// Метров за один импульс
-const float STEP_METERS = (float)CFG_ENC_DIAM*(float)0.0031415926/(float)CFG_ENC_IMP;
-// Коэффициент для расчета текущей скорости ленты 
-const float SPEED_CONSTANT = STEP_METERS*(float)1000000000; 
-
 
 long curTempX10 = 0;                        // Текущая температура измеренная АЦП
 long targetTemp10 = (long)CFG_TEMP_INIT*10; // Целевая температура

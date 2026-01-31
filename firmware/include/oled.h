@@ -12,7 +12,7 @@ uint8_t stretch(uint8_t x);
 void oled_printCharBig(uint8_t x, uint8_t page, char c, bool inv);
 void oled_printStrBig(uint8_t x, uint8_t page, const char* str, bool inv);
 void oled_printInt(uint8_t x, uint8_t page, long num, bool big, bool inv);
-void oled_printFloat(uint8_t x, uint8_t page, float num, uint8_t prec, bool big, bool inv);
+//void oled_printFloat(uint8_t x, uint8_t page, float num, uint8_t prec, bool big, bool inv);
 void oled_drawChinese(uint8_t x, uint8_t page, uint8_t index);
 
 const uint8_t heart_font[][72] PROGMEM = {

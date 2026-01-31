@@ -65,7 +65,9 @@ void setup() {
   printHeaterStatus();
   printMotorStatus();
   printTapeStatus();
-  printMillageAndSpeed(0.0, 0.0);
+  // только закоментив эту функцию сэкономил 1% памяти
+  // т.к. она заинлайнилась после этого
+  //printMillageAndSpeed(0, 0);
 }
 
 
@@ -80,6 +82,7 @@ ISR(INT1_vect) {
 // обработчики прерываний
 // обработчик двигателя, шагаем двигателм здесь !!!!!
 ISR(TIMER1_COMPA_vect) {
+  static uint32_t heater_timer_acc = 0;
   // 1. Мотор (максимальный приоритет по времени)
   if (runMotor) {
     PORTD |= motor_bit;  // Гарантированный HIGH
@@ -109,6 +112,7 @@ ISR(TIMER1_COMPA_vect) {
 void interfaceEncoderISR() {
   static uint8_t state = 0;
   static unsigned long lastStep = 0;
+  static int8_t subStep = 0; // Накопитель для 4-х фаз щелчка
 
   uint8_t currentState = (PIND >> 2) & 0x03;
   currentState ^= 0x03; // Сдвиг фазы энкодера
@@ -136,7 +140,7 @@ void interfaceEncoderISR() {
 void LengthEventISR(void) {
   // debug code
   //digitalWrite(13, !digitalRead(13));
-  TOGGLE_LED;
+  //TOGGLE_LED;
 
   unsigned long currentTime = micros();
   unsigned long duration = currentTime - lastTimeInterrupt;
@@ -225,21 +229,25 @@ void loop() {
 
     unsigned long avgDuration = copyEncoderEventDurationSum >> 4;
     //Считаем скорость: дистанция / время
-    float CurrentFilamentSpeed;
+    long CurrentFilamentSpeed;
     if(avgDuration == (~0UL) >> 5) {
-      CurrentFilamentSpeed = 0.0;
+      CurrentFilamentSpeed = 0;
       // Отключить проверку на наличие прерываний
       // для плавного уменьшения показателя скорости на экране
       // т.к. скорость уже 0
       SlimStopFlag = false;
     } else if(avgDuration != 0) {
-      CurrentFilamentSpeed = SPEED_CONSTANT / (float)avgDuration;
+      CurrentFilamentSpeed = 10000000L / avgDuration;
       SlimStopFlag = true;
     } else {
-      CurrentFilamentSpeed = 0.0;
+      CurrentFilamentSpeed = 0;
       SlimStopFlag = false;
     }
-    float FilamentLength = (float)copyFilamentTiks*STEP_METERS;
+    // Ролик диаметр 10мм длина окружности 31.4159 мм
+    // на кольце энкодера 32 отверсия, т.е. 1-тик почти 1мм
+    // на полметра набегает погрешность в 9 мм (насчитывает больше чем надо)
+    // вот и ввел коэффициент пересчета каждые полметра онимаю 9мм
+    long FilamentLength = copyFilamentTiks - (copyFilamentTiks>>9)*9;
     printMillageAndSpeed(FilamentLength, CurrentFilamentSpeed);
   }
 

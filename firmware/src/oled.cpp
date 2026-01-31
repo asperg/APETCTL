@@ -144,6 +144,7 @@ void oled_printInt(uint8_t x, uint8_t page, long num, bool big = false, bool inv
     else oled_printStr(x, page, buf, inv);
 }
 
+/*
 // num - число, width - общая ширина строки, prec - знаков после запятой
 void oled_printFloat(uint8_t x, uint8_t page, float num, uint8_t prec, bool big = false, bool inv = false) {
     char buf[10]; 
@@ -152,6 +153,7 @@ void oled_printFloat(uint8_t x, uint8_t page, float num, uint8_t prec, bool big 
     if (big) oled_printStrBig(x, page, buf, inv);
     else oled_printStr(x, page, buf, inv);
 }
+*/
 
 void oled_drawChinese(uint8_t x, uint8_t page, uint8_t index) {
     for (uint8_t p = 0; p < 3; p++) { // Рисуем 3 страницы в высоту

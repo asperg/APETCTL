@@ -3,12 +3,10 @@
 #include <Arduino.h>
 
 // from main.cpp
-void emStop(int reason);
-void motorCTL(long setSpeedX10);
 void encRotationToValue (long* value, int inc, long minValue, long maxValue);
 void interactiveSet();
 long getTemp();
-int computePID(void);
+uint32_t computePID();
 void LengthEventISR(void);
 void interfaceEncoderISR();
 void handleEncButton();
@@ -22,5 +20,7 @@ void printMotorStatus();
 void printTapeStatus();
 void SplashScreen(void);
 void printMillageAndSpeed(float m, float s);
+void motorCTL();
+void emStop(int reason);
 
 #endif

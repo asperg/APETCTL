@@ -7,8 +7,6 @@ volatile unsigned long FilamentTiks = 0;          // Сколько всего �
 volatile bool newDataFlag = false;                // Флаг, что обновились скорость и метраж
 
 long targetSpeedX10 = (float)CFG_SPEED_INIT * 10; // То, что мы выставили энкодером
-long currentSpeedX10 = SPEED_MIN10;               // Реальная скорость в данный момент
-uint32_t accelTimer = 0;                          // Таймер для шага разгона
 
 // Переменные для обработки энкодера интерфейса
 int8_t subStep = 0; // Накопитель для 4-х фаз щелчка
@@ -39,9 +37,6 @@ const float SPEED_CONSTANT = STEP_METERS*(float)1000000000;
 
 long curTempX10 = 0;                        // Текущая температура измеренная АЦП
 long targetTemp10 = (long)CFG_TEMP_INIT*10; // Целевая температура
-// for pid regulator
-long pid_integral = 0;
-long pid_lastError = 0;
 bool EndPetTapeFlag = false;
 bool SlimStopFlag = true;
 bool Heat = false;

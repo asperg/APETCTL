@@ -90,3 +90,111 @@ void printTapeStatus() {
   else
     oled_printCharBig(0, 6, ' ', false);
 }
+
+
+// Вызывать управление мотором каждые 100мс из основного цикла
+void motorCTL() {
+  static uint8_t currentSpeedX10 = SPEED_MIN10; 
+  static bool motorPreviosRunState = false;
+ 
+  uint16_t period;
+
+  if (runMotor) { 
+    // Включить если выключен
+    if(!motorPreviosRunState) {
+      digitalWrite(CFG_STEP_EN_PIN, LOW);
+      delay(1); 
+      motorPreviosRunState =  true;
+    }
+
+    if (currentSpeedX10 != targetSpeedX10) {
+      if (currentSpeedX10 < targetSpeedX10) { currentSpeedX10++; } 
+      else if (currentSpeedX10 > targetSpeedX10) { currentSpeedX10--; }
+      period = pgm_read_word(&step_table[currentSpeedX10]);
+      noInterrupts();
+      OCR1A = period;
+      // ЕСЛИ новый период меньше текущего счетчика, сбрасываем счетчик,
+      // чтобы мотор не ждал полного круга таймера в 65535 тиков
+      if (TCNT1 >= period) TCNT1 = 0; 
+      interrupts();
+    }
+  } else {
+    // Мотор выключили:
+    if(motorPreviosRunState) {
+      digitalWrite(CFG_STEP_EN_PIN, HIGH); // Выключаем удержание  
+      motorPreviosRunState = false;
+      // также установить максимальный интервал между шагами
+      // чтобы потом разгоняться с нуля.
+      currentSpeedX10 = SPEED_MIN10;
+      noInterrupts();
+      OCR1A = pgm_read_word(&step_table[currentSpeedX10]);
+      interrupts();
+    }
+  }
+}
+
+void emStop(int reason) {
+  runMotor = false;
+  Heat = false;
+  heater_pwm_threshold = 0;
+  oled_clear();
+  oled_printStrBig(0, 2, "*HALT!*", false);
+  switch (reason) {
+    case OVERHEAT:
+      oled_printStrBig(0, 5, "Overheat", false);
+      break;
+    case THERMISTOR_ERROR:
+      oled_printStrBig(0, 5, "Thermistor", false);
+      break;
+  }
+  noInterrupts();
+  TIMSK1 = 0; // Отключаем прерывания Таймера 1 (мотор и нагрев)
+  digitalWrite(CFG_STEP_EN_PIN, HIGH); // Снять ток с мотора
+  analogWrite(CFG_HEATER_PIN, 0);      // Отлключить нагреватель
+  for(;;){
+    delay(60000);
+  }
+}
+
+// и так все нужне переменные глобальные
+//__attribute__((noinline)) uint32_t computePID(void) {
+uint32_t computePID(void) {
+  static long pid_integral = 0;
+  static long pid_lastError = 0;
+  // Интеграл должен уметь "заполнить" весь ШИМ
+  const long i_limit = (long)CFG_PID_I_LIMIT;; 
+  
+  if (!Heat) {
+    pid_integral = 0; // Обнуляем "память" регулятора
+    return 0;
+  } 
+  // Коэффициенты (подобраны с множителем учетем что макс ШИМ 33333)
+  long Kp = (long)CFG_PID_P;
+  long Ki = (long)CFG_PID_I;
+  long Kd = (long)CFG_PID_D;
+
+  long error = targetTemp10 - curTempX10;
+  // 1. Пропорциональная часть
+  long P = Kp * error;
+
+  // 2. Интегральная часть (с защитой i_limit)
+  pid_integral += error;
+  if (pid_integral > i_limit) pid_integral = i_limit;
+  else if (pid_integral < -i_limit) pid_integral = -i_limit;
+  long I = Ki * pid_integral;
+
+  // 3. Дифференциальная часть
+  long D = Kd * (error - pid_lastError);
+  pid_lastError = error;
+
+  // Итоговый результат с обратным масштабированием
+  long long total = (long long)P + I + D;
+  long output = (long)(total >> 10);
+
+  // ШИМ 30 герц, таймер 2МГц итого 33333 микросекунт на максимальное значение шим
+  // Ограничиваем под ШИМ 
+  if (output > 33333) output = 33333;
+  if (output < 0) output = 0;
+
+  return (uint32_t)output;
+}

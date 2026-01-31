@@ -99,7 +99,6 @@ ISR(TIMER1_COMPA_vect) {
     if (heater_pwm_threshold > 0 && Heat) PORTB |= heater_bit;
   } else {
     // Конец импульса ШИМ (программная отсечка)
-    // 33333 / 255 = ~130 мкс на одну единицу ШИМ
     if (heater_timer_acc > heater_pwm_threshold) {
       PORTB &= ~heater_bit;
     }
@@ -169,6 +168,8 @@ void loop() {
 // SPINNER ----------------------------------------------------    
 // 10  раз в секунду
   if (millis() - spinnerTimer >= 100) {
+    // Здесь же управление мотором
+    motorCTL();
     spinnerTimer = millis();
     oled_printChar(120, 7, spinner[spinnerIdx], false);
     // В двое медленне, здесь опрос температуры !!! и расчет пида
@@ -177,8 +178,8 @@ void loop() {
       curTempX10 = getTemp();
       if (curTempX10 > CFG_TEMP_MAX_X10 - 100) emStop(OVERHEAT);
       if (Heat) {
-        uint32_t new_heater_pwm_thresold = 130 * (uint32_t)computePID();
-        // ШИМ 30 герц, таймер 2МГц итого 130 микросекунт на один уровень ШИМ
+        uint32_t new_heater_pwm_thresold = computePID();
+        // ШИМ 30 герц, таймер 2МГц итого 33333 микросекунт на максимальное значение шим
         noInterrupts();
         heater_pwm_threshold = new_heater_pwm_thresold;
         interrupts();
@@ -242,20 +243,6 @@ void loop() {
     printMillageAndSpeed(FilamentLength, CurrentFilamentSpeed);
   }
 
-  if (runMotor) {
-    if (millis() - accelTimer > ACCEL_STEP_MS) {
-      accelTimer = millis();
-    
-      if (currentSpeedX10 < targetSpeedX10) {
-        currentSpeedX10++; // Плавно ускоряем
-        motorCTL(currentSpeedX10);
-      } else if (currentSpeedX10 > targetSpeedX10) {
-        currentSpeedX10--; // Плавно замедляем (если крутанули энкодер вниз)
-        motorCTL(currentSpeedX10);
-      }
-    }
-  }
-
   handleEncButton();
 
   if (deltaTemp != 0) {
@@ -281,12 +268,10 @@ void loop() {
     EndPetTapeFlag = true;
     if(runMotor || Heat) {
       runMotor = false;
-      currentSpeedX10 = SPEED_MIN10;
       Heat = false;
       noInterrupts();
       heater_pwm_threshold = 0;
       interrupts();
-      digitalWrite(CFG_STEP_EN_PIN, HIGH); // Снимаем ток с мотора (свободное вращение)
       printHeaterStatus();
       printMotorStatus();
     }
@@ -330,11 +315,6 @@ void handleEncButton() {
           printHeaterStatus();
         } else if ( currentMode == InerfaceMode::EDIT_SPEED ) {
           runMotor = ! runMotor;
-          if(!runMotor) {
-            currentSpeedX10 = SPEED_MIN10;
-          } else {
-            motorCTL(currentSpeedX10);
-          }
           printMotorStatus();
         }
       } 
@@ -372,56 +352,6 @@ void handleEncButton() {
   }
 }
 
-void emStop(int reason) {
-  runMotor = false;
-  Heat = false;
-  heater_pwm_threshold = 0;
-  digitalWrite(CFG_STEP_EN_PIN, HIGH); // Снять ток с мотора
-  analogWrite(CFG_HEATER_PIN, 0);
-  oled_clear();
-  oled_printStrBig(0, 2, "*HALT!*", false);
-  switch (reason) {
-    case OVERHEAT:
-      oled_printStrBig(0, 5, "Overheat", false);
-      break;
-    case THERMISTOR_ERROR:
-      oled_printStrBig(0, 5, "Thermistor", false);
-      break;
-  }
-  noInterrupts();
-  TIMSK1 = 0; // Отключаем прерывания Таймера 1 (мотор и нагрев)
-  TIMSK2 = 0; // Отключаем Таймер 2 
-  digitalWrite(CFG_STEP_EN_PIN, HIGH); // Снять ток с мотора
-  analogWrite(CFG_HEATER_PIN, 0);      // Отлключить нагреватель
-  for(;;){
-    delay(60000);
-  }
-}
- 
-void motorCTL(long setSpeedX10) {
-  //Проверка на наизкую скорость, минимальная скорость 1 мм в сек
-  if (runMotor && setSpeedX10 >= 10 && setSpeedX10 < 100) {
-    if (digitalRead(CFG_STEP_EN_PIN) == HIGH) {
-      digitalWrite(CFG_STEP_EN_PIN, LOW);
-      delay(1); 
-    }
-    //На основе значений из таблицы установить частоту обновления таймера
-    int index = constrain(setSpeedX10, 0, 99);
-    uint16_t period = pgm_read_word(&step_table[index]);
-    noInterrupts();
-    OCR1A = period;
-    // ЕСЛИ новый период меньше текущего счетчика, сбрасываем счетчик,
-    // чтобы мотор не ждал полного круга таймера в 65535 тиков
-    if (TCNT1 >= period) TCNT1 = 0; 
-    interrupts();
-  } else {
-    runMotor = false;
-    if (digitalRead(CFG_STEP_EN_PIN) == LOW) {
-      digitalWrite(CFG_STEP_EN_PIN, HIGH); // Выключаем удержание
-    }
-  }
-}
-
 long getTemp() {
   uint16_t raw = analogRead(CFG_TERM_PIN);
   // после переключения мультиплексора на нужный пин
@@ -450,44 +380,4 @@ long getTemp() {
 
   // Возвращаем среднее значение температуры умноженное на 10
   return (long)t;
-}
-
-// и так все нужне переменные глобальные
-int computePID(void) {
-
-  if (!Heat) {
-    pid_integral = 0; // Обнуляем "память" регулятора
-    return 0;
-  } 
-   // Коэффициенты (подобраны с множителем 10)
-  long Kp = (long)CFG_PID_P;
-  long Ki = (long)CFG_PID_I;
-  long Kd = (long)CFG_PID_D;
-
-  // Увеличиваем лимит! Интеграл должен уметь "заполнить" весь ШИМ
-  // Лимит считаем так: (255 * 1000) / Ki
-  const long i_limit = 30000; 
-  long error = targetTemp10 - curTempX10;
-  // 1. Пропорциональная часть
-  long P = Kp * error;
-
-  // 2. Интегральная часть (с защитой i_limit)
-  pid_integral += error;
-  if (pid_integral > i_limit) pid_integral = i_limit;
-  else if (pid_integral < -i_limit) pid_integral = -i_limit;
-  long I = Ki * pid_integral;
-
-  // 3. Дифференциальная часть
-  long D = Kd * (error - pid_lastError);
-  pid_lastError = error;
-
-  // Итоговый результат с обратным масштабированием
-  // Делим на 1000, так как K и Temp оба имеют множители
-  long output = (P + I + D) / 1000;
-
-  // Ограничиваем под ШИМ 0-255
-  if (output > 255) output = 255;
-  if (output < 0) output = 0;
-
-  return (int)output;
 }

@@ -5,7 +5,6 @@
 
 #define TOGGLE_LED (PINB = (1 << 5))              //　Переключить встроенный светодиод
 #define SET_LED_OUTPUT (DDRB |= (1 << 5))         // Перевести PIN 13 в режим OUTPUT получится яркий светодиод
-#define ACCEL_STEP_MS 50                          // Интервал изменения скорости (мс)
 #define RING_BUFFER_SIZE 16
 #define SPEED_MAX10 99
 #define SPEED_MIN10 5

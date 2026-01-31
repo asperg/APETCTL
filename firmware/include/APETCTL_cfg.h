@@ -47,9 +47,4 @@
 /* Initial pull speed [mm/s] */
 #define CFG_SPEED_INIT 2
 
-/* Interactive statuses */
-#define CHANGE_NO 0
-#define CHANGE_TEMPERATURE 1
-#define CHANGE_SPEED 2
-
 #endif

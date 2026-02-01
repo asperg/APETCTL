@@ -19,9 +19,9 @@
 
 /* Initial target temperature [degree C]*/
 #define CFG_TEMP_INIT 250
-/* Maximum allowed temperature [degree C], allowed to set to 10 degree less */
+/* Maximum allowed temperature [degree C] x 10, allowed to set to 10 degree less */
 #define CFG_TEMP_MAX_X10 3300
-/* Minimum allowed temperature to set [degree C] */
+/* Minimum allowed temperature to set [degree C] x 10 */
 #define CFG_TEMP_MIN_X10 1200
 /* Which pin termistor connected to*/
 #define CFG_TERM_PIN A0

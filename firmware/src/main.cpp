@@ -303,15 +303,13 @@ void handleEncButton() {
   if (sw == LOW && !longPressHandled) {
     if (millis() - pressStartTime > 1000) { // Если держим больше 1 секунды
       // ДЕЙСТВИЕ НА УДЕРЖАНИЕ
-      if ( currentMode != InerfaceMode::IDLE ) {
-        if ( currentMode == InerfaceMode::EDIT_TEMP ) {
-          Heat = ! Heat;
-          printHeaterStatus();
-        } else if ( currentMode == InerfaceMode::EDIT_SPEED ) {
-          runMotor = ! runMotor;
-          printMotorStatus();
-        }
-      } 
+      if ( currentMode == InerfaceMode::EDIT_TEMP ) {
+        Heat = ! Heat;
+        printHeaterStatus();
+      } else if ( currentMode == InerfaceMode::EDIT_SPEED ) {
+        runMotor = ! runMotor;
+        printMotorStatus();
+      }
       longPressHandled = true; 
       encClickCount = 0; // Сбрасываем клики, чтобы не сработал обычный клик после отпускания
     }
@@ -332,16 +330,10 @@ void handleEncButton() {
   // Проверить нажатие одно или два
   // и нарисовать на экране в инверсии нужную строку
   if (encClickCount > 0 && (millis() - encLastClickTime > 400)) {
-    if (encClickCount == 1) { 
-      currentMode = InerfaceMode::EDIT_TEMP;
-      printTargetTemp();
-      printTargetSpeed();
-    }
-    else { 
-      currentMode = InerfaceMode::EDIT_SPEED;
-      printTargetTemp();
-      printTargetSpeed();
-    }
+    if (encClickCount == 1) { currentMode = InerfaceMode::EDIT_TEMP; }
+    else { currentMode = InerfaceMode::EDIT_SPEED; }
+    printTargetTemp();
+    printTargetSpeed();
     encClickCount = 0;
   }
 }

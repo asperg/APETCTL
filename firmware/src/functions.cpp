@@ -212,11 +212,11 @@ uint32_t computePID(void) {
 
   // Итоговый результат с обратным масштабированием
   long long total = (long long)P + I + D;
-  long output = (long)(total >> 10);
+  long output = (long)(total >> 8);
 
   // ШИМ 30 герц, таймер 2МГц итого 33333 микросекунт на максимальное значение шим
   // Ограничиваем под ШИМ 
-  if (output > 33333) output = 33333;
+  if (output > 400000L) output = 400000L;
   if (output < 0) output = 0;
 
   return (uint32_t)output;

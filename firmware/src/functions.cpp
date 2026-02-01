@@ -37,7 +37,7 @@ void printMillageAndSpeed(long m, long s) {
   buf[3] = (val % 10) + '0';
   val /= 10;
   buf[1] = (val % 10) + '0';
-  buf[0] = (val /= 10) + '0';
+  buf[0] = (val / 10) + '0';
   oled_printStrBig(12, 6, buf, false);
   
   // скорость максимум 99
@@ -185,7 +185,7 @@ uint32_t computePID(void) {
   static long pid_integral = 0;
   static long pid_lastError = 0;
   // Интеграл должен уметь "заполнить" весь ШИМ
-  const long i_limit = (long)CFG_PID_I_LIMIT;; 
+  const long i_limit = (long)CFG_PID_I_LIMIT;
   
   if (!Heat) {
     pid_integral = 0; // Обнуляем "память" регулятора

@@ -7,15 +7,7 @@ volatile bool newDataFlag = false;                // Флаг, что обнов
 
 long targetSpeedX10 = (float)CFG_SPEED_INIT * 10; // То, что мы выставили энкодером
 
-// чтобы не останавливать прерывания на время работы
-// с данными полученными в прерывании буду работать с
-// дельта буфером !!!
-volatile int8_t deltaTemp = 0;  
-volatile int8_t deltaSpeed = 0;
-// Таблица переходов (State Machine Table)
-// 0: нет движения, 1: вправо, -1: влево
-const int8_t encTable[] = {0, 1, -1, 0, -1, 0, 0, 1, 1, 0, 0, -1, 0, -1, 1, 0};
-
+volatile int8_t encDelta = 0;
 
 uint16_t adc_buffer[RING_BUFFER_SIZE]; // массив для хранения последних 16 значений АЦП
 uint8_t adc_idx = 0;                   // текущий индекс в массиве

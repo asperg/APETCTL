@@ -110,30 +110,12 @@ ISR(TIMER1_COMPA_vect) {
 
 // обработчик энкодера интерфейса
 void interfaceEncoderISR() {
-  static uint8_t state = 0;
-  static unsigned long lastStep = 0;
-  static int8_t subStep = 0; // Накопитель для 4-х фаз щелчка
-
+  static uint8_t state = 0xFF;
   uint8_t currentState = (PIND >> 2) & 0x03;
-  currentState ^= 0x03; // Сдвиг фазы энкодера
+  //currentState ^= 0x03; // Сдвиг фазы энкодера если пропукает шаг при смене направления
   state = (state << 2) | currentState;
-  int8_t res = encTable[state & 0x0F]; // оставить только младшие 4 бита
-
-  if (res == 0) return; 
-  if (currentMode == InerfaceMode::IDLE) return;
-  // ничего не считать если интерфейс в состоянии простоя (отображения)
-  subStep += res;
-  if (abs(subStep) >= 4) { // Когда прошли все 4 фазы щелчка
-    unsigned long now = millis();
-    int8_t step = (now - lastStep < 50) ? 5 : 1;
-    int8_t dir = (subStep > 0) ? 1 : -1;
-
-    if (currentMode == InerfaceMode::EDIT_TEMP) deltaTemp += dir * step;
-    else if (currentMode == InerfaceMode::EDIT_SPEED) deltaSpeed += dir * step;
-
-    lastStep = now;
-    subStep = 0; // Сброс накопителя
-  }
+  if ( state == 0b11010010 ) { encDelta--; }
+  else if ( state == 0b11100001 ) { encDelta++; }
 }
 
 // Обработка прерывания от датчика длины прутка
@@ -195,6 +177,26 @@ void loop() {
       }
       printCurrentTemp();
     }
+    // если нагрутили энкодером
+    if (encDelta != 0) {
+      noInterrupts();
+      int8_t copyDelta = encDelta;
+      encDelta = 0;
+      interrupts();
+      if (currentMode != InerfaceMode::IDLE) {
+        encLastActivity = millis();
+        int8_t dir = (copyDelta > 0) ? 1 : -1;
+        int8_t absDelta = abs(copyDelta);
+        if (absDelta > 1)  { copyDelta = (absDelta - 1) * 5 * dir; } // Если быстро крутил ручку
+        if (currentMode == InerfaceMode::EDIT_TEMP) {
+          targetTemp10 = constrain(targetTemp10 + copyDelta*10, CFG_TEMP_MIN_X10, CFG_TEMP_MAX_X10);
+          printTargetTemp();
+        } else if (currentMode == InerfaceMode::EDIT_SPEED) {
+          targetSpeedX10 = constrain(targetSpeedX10 + copyDelta, SPEED_MIN10, SPEED_MAX10);
+          printTargetSpeed();
+        }
+      }
+    }
     if (++spinnerIdx >= 4) spinnerIdx = 0;
   }
 
@@ -252,22 +254,6 @@ void loop() {
   }
 
   handleEncButton();
-
-  if (deltaTemp != 0) {
-    int8_t copyDelta = deltaTemp; // Копируем 1 байт (безопасно)
-    deltaTemp = 0;                // Сбрасываем (безопасно)
-    targetTemp10 = constrain(targetTemp10 + copyDelta*10, CFG_TEMP_MIN_X10, CFG_TEMP_MAX_X10);
-    encLastActivity = millis();
-    printTargetTemp();
-  }
-
-  if (deltaSpeed != 0) {
-    int8_t copyDelta = deltaSpeed;
-    deltaSpeed = 0;
-    targetSpeedX10 = constrain(targetSpeedX10 + copyDelta, SPEED_MIN10, SPEED_MAX10);
-    encLastActivity = millis();
-    printTargetSpeed();
-  }
 
   // Обработка датчика конца ПЭТ ленты
   // ререходим на машину состояний

@@ -7,7 +7,7 @@ volatile bool newDataFlag = false;                // Флаг, что обнов
 
 long targetSpeedX10 = (float)CFG_SPEED_INIT * 10; // То, что мы выставили энкодером
 
-volatile int8_t encDelta = 0;
+volatile int8_t encDelta = 0;          // количество кликов энкодера интерфейса отрицательные влево
 
 uint16_t adc_buffer[RING_BUFFER_SIZE]; // массив для хранения последних 16 значений АЦП
 uint8_t adc_idx = 0;                   // текущий индекс в массиве
@@ -33,6 +33,5 @@ uint8_t heater_bit;
 // Энкодер Интерфейса
 unsigned long encLastActivity = 0;
 unsigned long encLastClickTime = 0;
-int encClickCount = 0;
 
 InerfaceMode currentMode = InerfaceMode::IDLE;

@@ -38,7 +38,6 @@ extern uint8_t motor_bit;
 extern uint8_t heater_bit;
 extern unsigned long encLastActivity;
 extern unsigned long encLastClickTime;
-extern int encClickCount;
 
 enum class InerfaceMode { IDLE, EDIT_TEMP, EDIT_SPEED };
 extern InerfaceMode currentMode;

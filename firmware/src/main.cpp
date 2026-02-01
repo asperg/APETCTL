@@ -288,6 +288,7 @@ void handleEncButton() {
   static bool lastSw = HIGH;
   static unsigned long pressStartTime = 0; // Время начала нажатия
   static bool longPressHandled = false;    // Чтобы не срабатывать по кругу при удержании
+  static uint8_t encClickCount = 0;
 
   uint8_t pins = PIND; 
   bool sw  = pins & ENC_MASK_SW;

@@ -29,10 +29,10 @@
 #define CFG_EMENDSTOP_PIN 11
 
 /* PID regulator coefficients */
-#define CFG_PID_P 500000L
+#define CFG_PID_P 64000L
 #define CFG_PID_I 100L
 #define CFG_PID_D 0L
-#define CFG_PID_I_LIMIT 1000000L // 33333000/CFG_PID_I
+#define CFG_PID_I_LIMIT 2000000L
 
 /* Which pin heater MOSFET connected to 
 Из за особенностей кода может быть от 8 до 13 пина.

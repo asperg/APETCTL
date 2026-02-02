@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Math::Trig;
 
-my $CFG_TERM_SERIAL_R = 3300.0;
+my $CFG_TERM_SERIAL_R = 1000.0;
 my $CFG_TERM_VALUE = 100000.0;
 my $CFG_TERM_VALUE_TEMP = 25.0;
 my $CFG_TERM_B_COEFF = 3950.0;

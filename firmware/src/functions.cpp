@@ -184,9 +184,10 @@ void emStop(int reason) {
 uint32_t computePID(void) {
   static long pid_integral = 0;
   static long pid_lastError = 0;
-  // Интеграл должен уметь "заполнить" весь ШИМ
-  const long i_limit = (long)CFG_PID_I_LIMIT;
-  
+  long P;
+  long I;
+  long D;
+
   if (!Heat) {
     pid_integral = 0; // Обнуляем "память" регулятора
     return 0;
@@ -197,26 +198,34 @@ uint32_t computePID(void) {
   long Kd = (long)CFG_PID_D;
 
   long error = targetTemp10 - curTempX10;
+  
   // 1. Пропорциональная часть
-  long P = Kp * error;
+  P = Kp * error;
 
-  // 2. Интегральная часть (с защитой i_limit)
-  pid_integral += error;
-  if (pid_integral > i_limit) pid_integral = i_limit;
-  else if (pid_integral < -i_limit) pid_integral = -i_limit;
-  long I = Ki * pid_integral;
+  // 2. Интегральная часть
+  // Накапливаем только если ошибка меньше 10 градусов
+  if (abs(error) < 100) {
+    pid_integral += error;
+    I = Ki * pid_integral;
+
+    // Жесткое ограничение влияния
+    if (I > (long)CFG_PID_I_LIMIT) {
+        I = (long)CFG_PID_I_LIMIT;
+        pid_integral = I / Ki;
+    } else if (I < 0) {
+        I = 0;
+        pid_integral = 0;
+    }
+  } else {
+    // Вне зоны — интеграл не копится, чтобы не вызвать перелет
+    pid_integral = 0;
+  }
 
   // 3. Дифференциальная часть
-  long D = Kd * (error - pid_lastError);
+  D = Kd * (error - pid_lastError);
   pid_lastError = error;
 
-  // Итоговый результат с обратным масштабированием
-  long long total = (long long)P + I + D;
-  long output = (long)(total >> 8);
-
-  // ШИМ 30 герц, таймер 2МГц итого 33333 микросекунт на максимальное значение шим
-  // Ограничиваем под ШИМ 
-  if (output > 400000L) output = 400000L;
+  long output = P + I + D;
   if (output < 0) output = 0;
 
   return (uint32_t)output;

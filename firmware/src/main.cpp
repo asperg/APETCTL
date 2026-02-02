@@ -336,29 +336,29 @@ void handleEncButton() {
 }
 
 long getTemp() {
-  static int filteredADC = 0; // Накопленное значение 998 - 26 градусов
+  static int16_t filteredADC = 0; // Накопленное значение 998 - 26 градусов
   const byte alpha = 3;       // Коэффициент (0-4). Чем выше, тем быстрее реакция
 
   // Прогрев фильтра при первом запуске
   if (filteredADC == 0) {
-    filteredADC = (uint32_t)analogRead(CFG_TERM_PIN) << 4;
+    filteredADC = (int16_t)analogRead(CFG_TERM_PIN) << 4;
   }
 
   analogRead(CFG_TERM_PIN);
   // после переключения мультиплексора на нужный пин
   // дать небольшой таймаут для выравниваия потенциала
   delayMicroseconds(13);
-  int rawADC = analogRead(CFG_TERM_PIN) << 4;
+  int16_t rawADC = analogRead(CFG_TERM_PIN) << 4;
 
   // EMA filter экспоненциальное скользящее среднее
   filteredADC = filteredADC + ((rawADC - filteredADC) >> alpha);
   uint16_t idx = (uint16_t)filteredADC >> 4;      // Целая часть (индекс в LUT от 0 до 1023)
-  int fract = (int)filteredADC & 0x0F;  // Дробная часть (от 0 до 15)
+  int16_t fract = (int16_t)filteredADC & 0x0F;  // Дробная часть (от 0 до 15)
 
   if (idx > 1022) emStop(THERMISTOR_ERROR);
-  int t0 = (int)pgm_read_word(&(tempTable[idx]));
+  int16_t t0 = (int16_t)pgm_read_word(&(tempTable[idx]));
   if (t0 == -1) emStop(THERMISTOR_ERROR);
-  int t1 = (int)pgm_read_word(&(tempTable[idx + 1]));
+  int16_t t1 = (int16_t)pgm_read_word(&(tempTable[idx + 1]));
   if (t1 == -1) t1 = t0; // Чтобы не интерполировать в "минус один"
 
   long tempX10 = t0 + (((long)(t1 - t0) * fract) >> 4);

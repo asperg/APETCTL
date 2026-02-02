@@ -9,10 +9,6 @@ long targetSpeedX10 = (float)CFG_SPEED_INIT * 10; // То, что мы выст�
 
 volatile int8_t encDelta = 0;          // количество кликов энкодера интерфейса отрицательные влево
 
-uint16_t adc_buffer[RING_BUFFER_SIZE]; // массив для хранения последних 16 значений АЦП
-uint8_t adc_idx = 0;                   // текущий индекс в массиве
-uint32_t adc_sum = 0;                  // текущая сумма всех значений в буфере
-
 //Кольцевой буффер для длительности между прерываниями энкодера
 unsigned long enc_event_duration[RING_BUFFER_SIZE];
 uint8_t eed_idx = 0;

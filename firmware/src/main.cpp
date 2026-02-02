@@ -45,15 +45,11 @@ void setup() {
   oled_clear();
   SplashScreen();
 
-  // Заполнить кольцевой буффер АЦП текущим значением из АЦП
-  // кольцевой буффер длительности событий заполнить 
+  // Заполнить кольцевой буффер длительности событий 
   // максимальными значениями (~0UL) >> 5, скорость то 0
-  uint16_t startAdc = analogRead(CFG_TERM_PIN);
   for (int i = 0; i < RING_BUFFER_SIZE; i++) {
-    adc_buffer[i] = startAdc;
     enc_event_duration[i] = (~0UL) >> 5;
   }
-  adc_sum = (uint32_t)startAdc * RING_BUFFER_SIZE;
   eed_sum = ((~0UL) >> 5) * RING_BUFFER_SIZE;
 
   // Разрешаем аппаратные прерывания INT0 и INT1
@@ -340,31 +336,31 @@ void handleEncButton() {
 }
 
 long getTemp() {
-  uint16_t raw = analogRead(CFG_TERM_PIN);
+  static int filteredADC = 0; // Накопленное значение 998 - 26 градусов
+  const byte alpha = 3;       // Коэффициент (0-4). Чем выше, тем быстрее реакция
+
+  // Прогрев фильтра при первом запуске
+  if (filteredADC == 0) {
+    filteredADC = (uint32_t)analogRead(CFG_TERM_PIN) << 4;
+  }
+
+  analogRead(CFG_TERM_PIN);
   // после переключения мультиплексора на нужный пин
   // дать небольшой таймаут для выравниваия потенциала
   delayMicroseconds(13);
-  raw = analogRead(CFG_TERM_PIN);
+  int rawADC = analogRead(CFG_TERM_PIN) << 4;
 
-  // 2. Алгоритм скользящего среднего
-  adc_sum -= adc_buffer[adc_idx]; // Вычитаем самое старое значение из суммы
-  adc_buffer[adc_idx] = raw;      // Записываем новое значение на его место
-  adc_sum += raw;                 // Добавляем новое значение к общей сумме
+  // EMA filter экспоненциальное скользящее среднее
+  filteredADC = filteredADC + ((rawADC - filteredADC) >> alpha);
+  uint16_t idx = (uint16_t)filteredADC >> 4;      // Целая часть (индекс в LUT от 0 до 1023)
+  int fract = (int)filteredADC & 0x0F;  // Дробная часть (от 0 до 15)
 
-  // Инкремент индекса (с возвратом в 0 при достижении 16)
-  adc_idx++;
-  if (adc_idx >= RING_BUFFER_SIZE) adc_idx = 0;
-  // 3. Вычисляем среднее АЦП
-  // Вместо деления на 16 используем сдвиг вправо на 4 бита
-  uint16_t avgAdc = adc_sum >> 4;
+  if (idx > 1022) emStop(THERMISTOR_ERROR);
+  int t0 = (int)pgm_read_word(&(tempTable[idx]));
+  if (t0 == -1) emStop(THERMISTOR_ERROR);
+  int t1 = (int)pgm_read_word(&(tempTable[idx + 1]));
+  if (t1 == -1) t1 = t0; // Чтобы не интерполировать в "минус один"
 
-  // получить температуру из таблицы
-  //
-  int t = (int)pgm_read_word(&tempTable[avgAdc]);
-  if (t == -1) {
-    emStop(THERMISTOR_ERROR);
-  }
-
-  // Возвращаем среднее значение температуры умноженное на 10
-  return (long)t;
+  long tempX10 = t0 + (((long)(t1 - t0) * fract) >> 4);
+  return tempX10;
 }
